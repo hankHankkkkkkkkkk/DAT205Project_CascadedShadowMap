@@ -23,6 +23,8 @@ void processInput(GLFWwindow* window)
     }
 }
 
+void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO);
+
 int main()
 {
     // Initialize GLFW
@@ -63,6 +65,8 @@ int main()
 
     // Load the lighting shader program
     Shader shader("assets/shaders/basic3d.vert", "assets/shaders/basic3d.frag");
+
+    Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
 
     // Cube vertex data:
     // Each vertex contains 6 floats:
@@ -186,12 +190,86 @@ int main()
     glm::vec3 lightDirection(-0.5f, -1.0f, -0.3f);
     glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
+    const unsigned int SHADOW_WIDTH = 1024;
+    const unsigned int SHADOW_HEIGHT = 1024;
+
+    unsigned int depthMapFBO;
+    glGenFramebuffers(1, &depthMapFBO);
+
+    // create depth texture
+    unsigned int depthMap;
+    glGenTextures(1, &depthMap);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_DEPTH_COMPONENT,
+        SHADOW_WIDTH,
+        SHADOW_HEIGHT,
+        0,
+        GL_DEPTH_COMPONENT,
+        GL_FLOAT,
+        nullptr
+    );
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    // attach depth texture as FBO's depth buffer
+    glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    // Check whether the framebuffer is complete
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+    {
+        std::cerr << "Shadow framebuffer is not complete!" << std::endl;
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
     // Main render loop
     while (!glfwWindowShouldClose(window))
     {
         processInput(window);
 
+		// light matrix setup for shadow mapping
+        float near_plane = 1.0f, far_plane = 15.0f;
+        glm::mat4 lightProjection = glm::ortho(-6.0f, 6.0f, -6.0f, 6.0f, near_plane, far_plane);
+
+        glm::vec3 lightPos = -lightDirection * 5.0f;
+        glm::mat4 lightView = glm::lookAt(
+            lightPos,
+            glm::vec3(0.0f, 0.0f, 0.0f),
+            glm::vec3(0.0f, 1.0f, 0.0f)
+        );
+
+        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+        // 1. render scene to depth map
+        glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+        glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        depthShader.use();
+        depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
+        renderScene(depthShader, planeVAO, cubeVAO);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // 2. render scene as normal
+        glViewport(0, 0, 800, 600);
+
         // Clear the screen and depth buffer every frame
+        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -213,37 +291,20 @@ int main()
         // Send shared uniforms to the shader
         shader.setMat4("view", glm::value_ptr(view));
         shader.setMat4("projection", glm::value_ptr(projection));
+        shader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
         shader.setVec3("lightDirection", lightDirection.x, lightDirection.y, lightDirection.z);
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
-        // -------- Draw the ground plane --------
-        glm::mat4 planeModel = glm::mat4(1.0f);
-        shader.setMat4("model", glm::value_ptr(planeModel));
-        shader.setVec3("objectColor", 0.7f, 0.7f, 0.7f);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, depthMap);
+        shader.setInt("shadowMap", 0);
 
-        glBindVertexArray(planeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 6);
+		renderScene(shader, planeVAO, cubeVAO);
 
-        // -------- Draw cube 1 --------
-        glm::mat4 cubeModel1 = glm::mat4(1.0f);
-        cubeModel1 = glm::translate(cubeModel1, glm::vec3(-1.0f, 0.5f, -1.0f));
-        shader.setMat4("model", glm::value_ptr(cubeModel1));
-        shader.setVec3("objectColor", 1.0f, 0.5f, 0.2f);
+        //glBindVertexArray(cubeVAO);
+        //glDrawArrays(GL_TRIANGLES, 0, 36);
 
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // -------- Draw cube 2 --------
-        glm::mat4 cubeModel2 = glm::mat4(1.0f);
-        cubeModel2 = glm::translate(cubeModel2, glm::vec3(1.2f, 0.5f, 0.8f));
-        cubeModel2 = glm::scale(cubeModel2, glm::vec3(1.0f, 1.5f, 1.0f));
-        shader.setMat4("model", glm::value_ptr(cubeModel2));
-        shader.setVec3("objectColor", 0.2f, 0.6f, 1.0f);
-
-        glBindVertexArray(cubeVAO);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-
-        // Present the rendered frame
+        //// Present the rendered frame
         glfwSwapBuffers(window);
         glfwPollEvents();
     }
@@ -254,8 +315,38 @@ int main()
     glDeleteVertexArrays(1, &planeVAO);
     glDeleteBuffers(1, &planeVBO);
 
+    glDeleteFramebuffers(1, &depthMapFBO);
+    glDeleteTextures(1, &depthMap);
+
     // Clean up GLFW resources
     glfwDestroyWindow(window);
     glfwTerminate();
     return 0;
+}
+
+void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO)
+{
+    // plane
+    glm::mat4 planeModel = glm::mat4(1.0f);
+    shader.setMat4("model", glm::value_ptr(planeModel));
+    shader.setVec3("objectColor", 0.7f, 0.7f, 0.7f);
+    glBindVertexArray(planeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    // cube 1
+    glm::mat4 cubeModel1 = glm::mat4(1.0f);
+    cubeModel1 = glm::translate(cubeModel1, glm::vec3(-1.0f, 0.5f, -1.0f));
+    shader.setMat4("model", glm::value_ptr(cubeModel1));
+    shader.setVec3("objectColor", 1.0f, 0.5f, 0.2f);
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // cube 2
+    glm::mat4 cubeModel2 = glm::mat4(1.0f);
+    cubeModel2 = glm::translate(cubeModel2, glm::vec3(1.2f, 0.5f, 0.8f));
+    cubeModel2 = glm::scale(cubeModel2, glm::vec3(1.0f, 1.5f, 1.0f));
+    shader.setMat4("model", glm::value_ptr(cubeModel2));
+    shader.setVec3("objectColor", 0.2f, 0.6f, 1.0f);
+    glBindVertexArray(cubeVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
 }

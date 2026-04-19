@@ -17,6 +17,8 @@ public:
 
     void setMat4(const std::string& name, const float* value) const;
 	void setVec3(const std::string& name, float x, float y, float z) const;
+
+    void setInt(const std::string& name, int value) const;
 };
 
 #endif
