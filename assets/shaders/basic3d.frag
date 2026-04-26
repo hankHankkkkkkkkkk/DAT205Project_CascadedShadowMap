@@ -10,6 +10,14 @@ uniform vec3 lightColor;
 uniform vec3 lightDirection;
 uniform sampler2D shadowMap;
 
+// Shadow bias parameters
+uniform float shadowBiasSlope;
+uniform float shadowBiasMin;
+
+// Toggle for using PCF
+uniform bool usePCF;
+
+
 float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
 {
     // perspective divide
@@ -26,13 +34,44 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
         return 0.0;
     }
 
-    float closestDepth = texture(shadowMap, projCoords.xy).r;
-    float currentDepth = projCoords.z;
+    //float closestDepth = texture(shadowMap, projCoords.xy).r;
+    //float currentDepth = projCoords.z;
 
     // simple bias
-    float bias = max(0.005 * (1.0 - dot(normalize(normal), normalize(-lightDir))), 0.0005);
+    //float bias = max(0.005 * (1.0 - dot(normalize(normal), normalize(-lightDir))), 0.0005);
 
-    float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    //float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    //return shadow;
+
+    // Implement PCF
+    float currentDepth = projCoords.z;
+
+    //float bias = max(0.01 * (1.0 - dot(normalize(normal), normalize(-lightDir))), 0.0005);
+
+    float ndotl = dot(normalize(normal), normalize(-lightDir));
+    float bias = max(shadowBiasSlope * (1.0 - ndotl), shadowBiasMin);
+
+    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    float shadow = 0.0;
+
+        if (!usePCF)
+    {
+        float closestDepth = texture(shadowMap, projCoords.xy).r;
+        return currentDepth - bias > closestDepth ? 1.0 : 0.0;
+    }
+
+
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
+        }
+    }
+
+    shadow /= 9.0;
+
     return shadow;
 }
 

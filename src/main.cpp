@@ -6,6 +6,13 @@
 #include <glm/gtc/matrix_transform.hpp>        // Matrix transformation helpers
 #include <glm/gtc/type_ptr.hpp>                // Convert GLM types to raw pointer data
 
+#include <sstream>      // Implement FPS/Frame time calculations
+#include <iomanip>
+
+#include "imgui.h"
+#include "backends/imgui_impl_glfw.h"
+#include "backends/imgui_impl_opengl3.h"
+
 #include "shader.h"
 
 // Update the viewport whenever the framebuffer size changes
@@ -27,6 +34,15 @@ void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO);
 
 int main()
 {
+    bool usePCF = true;
+    
+    double lastFrameTime = glfwGetTime();
+    double fpsTimer = 0.0;
+    int frameCount = 0;
+
+    double currentFps = 0.0;
+    double currentFrameTimeMs = 0.0;
+
     // Initialize GLFW
     glfwInit();
 
@@ -47,6 +63,14 @@ int main()
     // Make this window's OpenGL context current
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    // initialize ImGui context and bind it to our GLFW window and OpenGL context
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
 
     // Initialize GLAD
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -190,6 +214,24 @@ int main()
     glm::vec3 lightDirection(-0.5f, -1.0f, -0.3f);
     glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
+	// Define shadow bias parameters
+    float shadowBiasSlope = 0.01f;
+    float shadowBiasMin = 0.0015f;
+
+	// Define light frustum parameters for shadow mapping
+    float lightOrthoSize = 6.0f;
+    float lightNearPlane = 1.0f;
+    float lightFarPlane = 15.0f;
+
+    //glm::mat4 lightProjection = glm::ortho(
+    //    -lightOrthoSize,
+    //    lightOrthoSize,
+    //    -lightOrthoSize,
+    //    lightOrthoSize,
+    //    lightNearPlane,
+    //    lightFarPlane
+    //);
+
     const unsigned int SHADOW_WIDTH = 1024;
     const unsigned int SHADOW_HEIGHT = 1024;
 
@@ -239,10 +281,50 @@ int main()
     while (!glfwWindowShouldClose(window))
     {
         processInput(window);
+        
+        // Calculate frame time and FPS
+        double currentFrameTime = glfwGetTime();
+        double deltaTime = currentFrameTime - lastFrameTime;
+        lastFrameTime = currentFrameTime;
+
+        fpsTimer += deltaTime;
+        frameCount++;
+
+        if (fpsTimer >= 0.25)
+        {
+            currentFps = frameCount / fpsTimer;
+            currentFrameTimeMs = 1000.0 / currentFps;
+
+            std::ostringstream title;
+            title << "DAT205 Lit 3D Scene | FPS: "
+                << std::fixed << std::setprecision(1) << currentFps
+                << " | Frame: "
+                << std::fixed << std::setprecision(2) << currentFrameTimeMs
+                << " ms";
+
+            glfwSetWindowTitle(window, title.str().c_str());
+
+            frameCount = 0;
+            fpsTimer = 0.0;
+        }
 
 		// light matrix setup for shadow mapping
-        float near_plane = 1.0f, far_plane = 15.0f;
-        glm::mat4 lightProjection = glm::ortho(-6.0f, 6.0f, -6.0f, 6.0f, near_plane, far_plane);
+        //float near_plane = 1.0f, far_plane = 15.0f;
+        //glm::mat4 lightProjection = glm::ortho(-6.0f, 6.0f, -6.0f, 6.0f, near_plane, far_plane);
+        
+        if (lightFarPlane <= lightNearPlane + 0.1f)
+        {
+            lightFarPlane = lightNearPlane + 0.1f;
+        }
+
+        glm::mat4 lightProjection = glm::ortho(
+            -lightOrthoSize,
+            lightOrthoSize,
+            -lightOrthoSize,
+            lightOrthoSize,
+            lightNearPlane,
+            lightFarPlane
+        );
 
         glm::vec3 lightPos = -lightDirection * 5.0f;
         glm::mat4 lightView = glm::lookAt(
@@ -275,6 +357,8 @@ int main()
 
         shader.use();
 
+        shader.setBool("usePCF", usePCF);
+
         // Build a fixed camera view matrix
         glm::mat4 view = glm::mat4(1.0f);
         view = glm::translate(view, glm::vec3(0.0f, -1.2f, -6.0f));
@@ -295,6 +379,10 @@ int main()
         shader.setVec3("lightDirection", lightDirection.x, lightDirection.y, lightDirection.z);
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
+		// Shadow bias parameters 
+        shader.setFloat("shadowBiasSlope", shadowBiasSlope);
+        shader.setFloat("shadowBiasMin", shadowBiasMin);
+
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, depthMap);
         shader.setInt("shadowMap", 0);
@@ -303,6 +391,42 @@ int main()
 
         //glBindVertexArray(cubeVAO);
         //glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        //Draw overlay
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        ImGuiIO& io = ImGui::GetIO();
+
+        ImGui::Begin("Shadow Debug");
+        ImGui::Text("FPS: %.1f", io.Framerate);
+        ImGui::Text("Frame time: %.3f ms", 1000.0f / io.Framerate);
+
+        // bias parameters
+        ImGui::SliderFloat("Bias slope", &shadowBiasSlope, 0.0f, 0.05f, "%.5f");
+        ImGui::SliderFloat("Bias min", &shadowBiasMin, 0.0f, 0.01f, "%.5f");
+
+		// light frustum parameters
+        ImGui::SliderFloat("Ortho size", &lightOrthoSize, 1.0f, 30.0f);
+        ImGui::SliderFloat("Near plane", &lightNearPlane, 0.01f, 20.0f);
+        ImGui::SliderFloat("Far plane", &lightFarPlane, 1.0f, 50.0f);
+
+        // PCF toggle
+        ImGui::Checkbox("Use PCF", &usePCF);
+
+        ImGui::End();
+
+		// Ensure far plane is always greater than near plane
+        if (lightFarPlane <= lightNearPlane + 0.1f)
+        {
+            lightFarPlane = lightNearPlane + 0.1f;
+        }
+
+        //DrawShadowDebugOverlay(...);
+
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         //// Present the rendered frame
         glfwSwapBuffers(window);
@@ -318,6 +442,11 @@ int main()
     glDeleteFramebuffers(1, &depthMapFBO);
     glDeleteTextures(1, &depthMap);
 
+	// Clean up ImGui resources
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+    
     // Clean up GLFW resources
     glfwDestroyWindow(window);
     glfwTerminate();

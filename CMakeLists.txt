@@ -11,6 +11,12 @@ add_executable(DAT205Project_CascadedShadowMap
     src/main.cpp
     src/shader.cpp
     extern/glad/src/glad.c
+    extern/imgui/imgui.cpp
+    extern/imgui/imgui_draw.cpp
+    extern/imgui/imgui_tables.cpp
+    extern/imgui/imgui_widgets.cpp
+    extern/imgui/backends/imgui_impl_glfw.cpp
+    extern/imgui/backends/imgui_impl_opengl3.cpp
 )
 
 add_custom_command(TARGET DAT205Project_CascadedShadowMap POST_BUILD
@@ -23,6 +29,8 @@ target_include_directories(DAT205Project_CascadedShadowMap PRIVATE
     src
     extern/glad/include
     extern
+    extern/imgui
+    extern/imgui/backends
 )
 
 target_link_libraries(DAT205Project_CascadedShadowMap PRIVATE
