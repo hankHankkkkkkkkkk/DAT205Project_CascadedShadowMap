@@ -9,6 +9,12 @@
 #include <sstream>      // Implement FPS/Frame time calculations
 #include <iomanip>
 
+#include <vector>
+#include <cmath>
+#include <algorithm>
+
+#include <limits>
+
 #include "imgui.h"
 #include "backends/imgui_impl_glfw.h"
 #include "backends/imgui_impl_opengl3.h"
@@ -22,6 +28,8 @@ const unsigned int WINDOW_HEIGHT = 1080;
 // Initial camera height
 const float CAMERA_FIXED_HEIGHT = 1.0f;
 
+// Define maximum number of cascades
+const int MAX_CASCADES = 7;
 
 
 // Update the viewport whenever the framebuffer size changes
@@ -140,7 +148,9 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos)
     cameraFront = glm::normalize(direction);
 }
 
-
+std::vector<glm::vec4> GetFrustumCornersWorldSpace(const glm::mat4& projection, const glm::mat4& view);
+glm::mat4 GetLightSpaceMatrix(float nearPlane, float farPlane, float aspect, const glm::vec3& lightDirection, float padding);
+void UpdateCascadeSplits(float* cascadeSplits, int cascadeCount, float nearPlane, float farPlane, float lambda);
 
 void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO);
 
@@ -338,6 +348,20 @@ int main()
     float lightNearPlane = 1.0f;
     float lightFarPlane = 15.0f;
 
+    // CSM parameters
+    int cascadeCount = 3;
+    float cameraNear = 0.1f;
+    float cameraFar = 100.0f;
+    float splitLambda = 0.5f;
+    float cascadePadding = 10.0f;
+    bool useCSM = true;
+    bool showCascadeDebug = false;
+    bool showDepthDebug = false;
+    bool reportedCascadeFboError[MAX_CASCADES] = {};
+
+    float cascadeSplits[MAX_CASCADES];
+    glm::mat4 cascadeLightSpaceMatrices[MAX_CASCADES];
+
     //glm::mat4 lightProjection = glm::ortho(
     //    -lightOrthoSize,
     //    lightOrthoSize,
@@ -354,41 +378,53 @@ int main()
     glGenFramebuffers(1, &depthMapFBO);
 
     // create depth texture
-    unsigned int depthMap;
-    glGenTextures(1, &depthMap);
-    glBindTexture(GL_TEXTURE_2D, depthMap);
-    glTexImage2D(
-        GL_TEXTURE_2D,
+    //unsigned int depthMap;
+    //glGenTextures(1, &depthMap);
+    //glBindTexture(GL_TEXTURE_2D, depthMap);
+    //glTexImage2D(
+    //    GL_TEXTURE_2D,
+    //    0,
+    //    GL_DEPTH_COMPONENT,
+    //    SHADOW_WIDTH,
+    //    SHADOW_HEIGHT,
+    //    0,
+    //    GL_DEPTH_COMPONENT,
+    //    GL_FLOAT,
+    //    nullptr
+    //);
+
+    unsigned int depthMapArray;
+    glGenTextures(1, &depthMapArray);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, depthMapArray);
+
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY,
         0,
-        GL_DEPTH_COMPONENT,
+        GL_DEPTH_COMPONENT32F,
         SHADOW_WIDTH,
         SHADOW_HEIGHT,
+        MAX_CASCADES,
         0,
         GL_DEPTH_COMPONENT,
         GL_FLOAT,
         nullptr
     );
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 
     float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, borderColor);
 
     // attach depth texture as FBO's depth buffer
     glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    //glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+    
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-    // Check whether the framebuffer is complete
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-    {
-        std::cerr << "Shadow framebuffer is not complete!" << std::endl;
-    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -434,32 +470,78 @@ int main()
             lightFarPlane = lightNearPlane + 0.1f;
         }
 
-        glm::mat4 lightProjection = glm::ortho(
-            -lightOrthoSize,
-            lightOrthoSize,
-            -lightOrthoSize,
-            lightOrthoSize,
-            lightNearPlane,
-            lightFarPlane
-        );
+        //glm::mat4 lightProjection = glm::ortho(
+        //    -lightOrthoSize,
+        //    lightOrthoSize,
+        //    -lightOrthoSize,
+        //    lightOrthoSize,
+        //    lightNearPlane,
+        //    lightFarPlane
+        //);
 
-        glm::vec3 lightPos = -lightDirection * 5.0f;
-        glm::mat4 lightView = glm::lookAt(
-            lightPos,
-            glm::vec3(0.0f, 0.0f, 0.0f),
-            glm::vec3(0.0f, 1.0f, 0.0f)
-        );
+        //glm::vec3 lightPos = -lightDirection * 5.0f;
+        //glm::mat4 lightView = glm::lookAt(
+        //    lightPos,
+        //    glm::vec3(0.0f, 0.0f, 0.0f),
+        //    glm::vec3(0.0f, 1.0f, 0.0f)
+        //);
 
-        glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+        //glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
+        int activeCascadeCount = useCSM ? cascadeCount : 1;
+        UpdateCascadeSplits(cascadeSplits, activeCascadeCount, cameraNear, cameraFar, splitLambda);
+
+        int framebufferWidth, framebufferHeight;
+        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+        float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+        
+        float cascadeNear = cameraNear;
+        for (int i = 0; i < activeCascadeCount; ++i)
+        {
+            float cascadeFar = cascadeSplits[i];
+
+            cascadeLightSpaceMatrices[i] = GetLightSpaceMatrix(
+                cascadeNear,
+                cascadeFar,
+                aspect,
+                lightDirection,
+                cascadePadding
+            );
+
+            cascadeNear = cascadeFar;
+        } 
+        
         // 1. render scene to depth map
         glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
         glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
         glClear(GL_DEPTH_BUFFER_BIT);
 
         depthShader.use();
-        depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
-        renderScene(depthShader, planeVAO, cubeVAO);
+        //depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
+        //renderScene(depthShader, planeVAO, cubeVAO);
+
+		// Shadow map generation for each cascade
+        for (int i = 0; i < activeCascadeCount; ++i)
+        {
+            glFramebufferTextureLayer(
+                GL_FRAMEBUFFER,
+                GL_DEPTH_ATTACHMENT,
+                depthMapArray,
+                0,
+                i
+            );
+
+            if (!reportedCascadeFboError[i] && glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            {
+                std::cerr << "Cascade FBO incomplete at layer " << i << std::endl;
+                reportedCascadeFboError[i] = true;
+            }
+
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[i]));
+            renderScene(depthShader, planeVAO, cubeVAO);
+        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -467,7 +549,6 @@ int main()
         //glViewport(0, 0, 800, 600);
 
         // render the scence adaptively
-        int framebufferWidth, framebufferHeight;
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
         glViewport(0, 0, framebufferWidth, framebufferHeight);
 
@@ -502,7 +583,6 @@ int main()
             cameraUp
         );
 
-        float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
         glm::mat4 projection = glm::perspective(
             glm::radians(fov),
             aspect,
@@ -514,17 +594,34 @@ int main()
         // Send shared uniforms to the shader
         shader.setMat4("view", glm::value_ptr(view));
         shader.setMat4("projection", glm::value_ptr(projection));
-        shader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
+        //shader.setMat4("lightSpaceMatrix", glm::value_ptr(lightSpaceMatrix));
         shader.setVec3("lightDirection", lightDirection.x, lightDirection.y, lightDirection.z);
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
-		// Shadow bias parameters 
+        shader.setInt("cascadeCount", activeCascadeCount);
+        shader.setBool("showCascadeDebug", showCascadeDebug);
+        shader.setBool("showDepthDebug", showDepthDebug);
+
+        for (int i = 0; i < activeCascadeCount; ++i)
+        {
+            shader.setMat4(
+                "lightSpaceMatrices[" + std::to_string(i) + "]",
+                glm::value_ptr(cascadeLightSpaceMatrices[i])
+            );
+
+            shader.setFloat(
+                "cascadeSplits[" + std::to_string(i) + "]",
+                cascadeSplits[i]
+            );
+        }
+        
+        // Shadow bias parameters 
         shader.setFloat("shadowBiasSlope", shadowBiasSlope);
         shader.setFloat("shadowBiasMin", shadowBiasMin);
 
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, depthMap);
-        shader.setInt("shadowMap", 0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, depthMapArray);
+        shader.setInt("shadowMapArray", 0);
 
 		renderScene(shader, planeVAO, cubeVAO);
 
@@ -538,6 +635,7 @@ int main()
 
         ImGuiIO& io = ImGui::GetIO();
 
+        ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
         ImGui::Begin("Shadow Debug");
         ImGui::Text("FPS: %.1f", io.Framerate);
         ImGui::Text("Frame time: %.3f ms", 1000.0f / io.Framerate);
@@ -547,13 +645,38 @@ int main()
         ImGui::SliderFloat("Bias min", &shadowBiasMin, 0.0f, 0.01f, "%.5f");
 
 		// light frustum parameters
-        ImGui::SliderFloat("Ortho size", &lightOrthoSize, 1.0f, 30.0f);
-        ImGui::SliderFloat("Near plane", &lightNearPlane, 0.01f, 20.0f);
-        ImGui::SliderFloat("Far plane", &lightFarPlane, 1.0f, 50.0f);
+        //ImGui::SliderFloat("Ortho size", &lightOrthoSize, 1.0f, 30.0f);
+        //ImGui::SliderFloat("Near plane", &lightNearPlane, 0.01f, 20.0f);
+        //ImGui::SliderFloat("Far plane", &lightFarPlane, 1.0f, 50.0f);
 
         // PCF toggle
         ImGui::Checkbox("Use PCF", &usePCF);
 
+		// CSM Debug parameters
+        ImGui::SeparatorText("CSM");
+        ImGui::Checkbox("Use CSM", &useCSM);
+
+        const char* cascadeModes[] = { "3 Cascades", "5 Cascades", "7 Cascades" };
+        int cascadeModeIndex = cascadeCount == 3 ? 0 : cascadeCount == 5 ? 1 : 2;
+
+        ImGui::BeginDisabled(!useCSM);
+        if (ImGui::Combo("Cascade count", &cascadeModeIndex, cascadeModes, IM_ARRAYSIZE(cascadeModes)))
+        {
+            cascadeCount = cascadeModeIndex == 0 ? 3 : cascadeModeIndex == 1 ? 5 : 7;
+        }
+
+        ImGui::SliderFloat("Split lambda", &splitLambda, 0.0f, 1.0f);
+        ImGui::EndDisabled();
+
+        ImGui::SliderFloat("Cascade padding", &cascadePadding, 0.0f, 50.0f);
+        ImGui::Checkbox("Show cascade debug", &showCascadeDebug);
+        ImGui::Checkbox("Show depth debug", &showDepthDebug);
+
+        for (int i = 0; i < activeCascadeCount; ++i)
+        {
+            ImGui::Text("Cascade %d end: %.2f", i, cascadeSplits[i]);
+        }
+        
         ImGui::End();
 
 		// Ensure far plane is always greater than near plane
@@ -579,7 +702,7 @@ int main()
     glDeleteBuffers(1, &planeVBO);
 
     glDeleteFramebuffers(1, &depthMapFBO);
-    glDeleteTextures(1, &depthMap);
+    glDeleteTextures(1, &depthMapArray);
 
 	// Clean up ImGui resources
     ImGui_ImplOpenGL3_Shutdown();
@@ -617,4 +740,94 @@ void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO)
     shader.setVec3("objectColor", 0.2f, 0.6f, 1.0f);
     glBindVertexArray(cubeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
+}
+
+void UpdateCascadeSplits(float* cascadeSplits, int cascadeCount, float nearPlane, float farPlane, float lambda)
+{
+    for (int i = 0; i < cascadeCount; ++i)
+    {
+        float p = static_cast<float>(i + 1) / static_cast<float>(cascadeCount);
+        float logSplit = nearPlane * std::pow(farPlane / nearPlane, p);
+        float linearSplit = nearPlane + (farPlane - nearPlane) * p;
+        cascadeSplits[i] = lambda * logSplit + (1.0f - lambda) * linearSplit;
+    }
+}
+
+std::vector<glm::vec4> GetFrustumCornersWorldSpace(const glm::mat4& projection, const glm::mat4& view)
+{
+    glm::mat4 inverse = glm::inverse(projection * view);
+    std::vector<glm::vec4> corners;
+
+    for (int x = 0; x < 2; ++x)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int z = 0; z < 2; ++z)
+            {
+                glm::vec4 point = inverse * glm::vec4(
+                    2.0f * x - 1.0f,
+                    2.0f * y - 1.0f,
+                    2.0f * z - 1.0f,
+                    1.0f
+                );
+
+                corners.push_back(point / point.w);
+            }
+        }
+    }
+
+    return corners;
+}
+
+glm::mat4 GetLightSpaceMatrix(float nearPlane, float farPlane, float aspect, const glm::vec3& lightDirection, float padding)
+{
+    glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
+    glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
+
+    std::vector<glm::vec4> corners = GetFrustumCornersWorldSpace(projection, view);
+
+    glm::vec3 center(0.0f);
+    for (const glm::vec4& corner : corners)
+    {
+        center += glm::vec3(corner);
+    }
+    center /= static_cast<float>(corners.size());
+
+    glm::vec3 lightDir = glm::normalize(lightDirection);
+    glm::mat4 lightView = glm::lookAt(
+        center - lightDir * 30.0f,
+        center,
+        glm::vec3(0.0f, 1.0f, 0.0f)
+    );
+
+    float minX = std::numeric_limits<float>::max();
+    float maxX = std::numeric_limits<float>::lowest();
+    float minY = std::numeric_limits<float>::max();
+    float maxY = std::numeric_limits<float>::lowest();
+    float minZ = std::numeric_limits<float>::max();
+    float maxZ = std::numeric_limits<float>::lowest();
+
+    for (const glm::vec4& corner : corners)
+    {
+        glm::vec4 trf = lightView * corner;
+        minX = std::min(minX, trf.x);
+        maxX = std::max(maxX, trf.x);
+        minY = std::min(minY, trf.y);
+        maxY = std::max(maxY, trf.y);
+        minZ = std::min(minZ, trf.z);
+        maxZ = std::max(maxZ, trf.z);
+    }
+
+    float lightNearPlane = std::max(0.01f, -maxZ - padding);
+    float lightFarPlane = std::max(lightNearPlane + 0.01f, -minZ + padding);
+
+    return glm::ortho(
+        minX - padding,
+        maxX + padding,
+        minY - padding,
+        maxY + padding,
+        lightNearPlane,
+        lightFarPlane
+    ) * lightView;
+
 }

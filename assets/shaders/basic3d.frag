@@ -1,14 +1,19 @@
 #version 330 core
+
+const int MAX_CASCADES = 7;
+
 out vec4 FragColor;
 
 in vec3 Normal;
 in vec3 FragPos;
-in vec4 FragPosLightSpace;
+// in vec4 FragPosLightSpace;
+
+in vec4 FragPosViewSpace;
 
 uniform vec3 objectColor;
 uniform vec3 lightColor;
 uniform vec3 lightDirection;
-uniform sampler2D shadowMap;
+// uniform sampler2D shadowMap;
 
 // Shadow bias parameters
 uniform float shadowBiasSlope;
@@ -17,11 +22,34 @@ uniform float shadowBiasMin;
 // Toggle for using PCF
 uniform bool usePCF;
 
+// Implement CSM
+uniform sampler2DArray shadowMapArray;
+uniform mat4 lightSpaceMatrices[MAX_CASCADES];
+uniform float cascadeSplits[MAX_CASCADES];
+uniform int cascadeCount;
+uniform bool showCascadeDebug;
+uniform bool showDepthDebug;
 
-float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
+vec3 depthDebugColor = vec3(0.0);
+
+float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDir, out int cascadeIndex)
 {
     // perspective divide
+    // vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
+    cascadeIndex = cascadeCount - 1;
+    for (int i = 0; i < cascadeCount; ++i)
+    {
+        if (viewDepth < cascadeSplits[i])
+        {
+            cascadeIndex = i;
+            break;
+        }
+    }
+
+    vec4 fragPosLightSpace = lightSpaceMatrices[cascadeIndex] * vec4(fragPos, 1.0);
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+
 
     // transform from [-1,1] to [0,1]
     projCoords = projCoords * 0.5 + 0.5;
@@ -31,6 +59,21 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
         projCoords.y < 0.0 || projCoords.y > 1.0 ||
         projCoords.z < 0.0 || projCoords.z > 1.0)
     {
+        if (showDepthDebug)
+        {
+            if (projCoords.x < 0.0 || projCoords.x > 1.0)
+            {
+                depthDebugColor = vec3(1.0, 0.0, 0.0);
+            }
+            else if (projCoords.y < 0.0 || projCoords.y > 1.0)
+            {
+                depthDebugColor = vec3(1.0, 0.0, 1.0);
+            }
+            else
+            {
+                depthDebugColor = vec3(0.0, 0.4, 1.0);
+            }
+        }
         return 0.0;
     }
 
@@ -51,12 +94,19 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
     float ndotl = dot(normalize(normal), normalize(-lightDir));
     float bias = max(shadowBiasSlope * (1.0 - ndotl), shadowBiasMin);
 
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0).xy);
     float shadow = 0.0;
 
-        if (!usePCF)
+    if (!usePCF)
     {
-        float closestDepth = texture(shadowMap, projCoords.xy).r;
+        // float closestDepth = texture(shadowMap, projCoords.xy).r;
+        
+        float closestDepth = texture(shadowMapArray, vec3(projCoords.xy, float(cascadeIndex))).r;
+        if (showDepthDebug)
+        {
+            depthDebugColor = closestDepth < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 1.0, 0.0);
+            return 0.0;
+        }
         return currentDepth - bias > closestDepth ? 1.0 : 0.0;
     }
 
@@ -65,12 +115,25 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir)
     {
         for (int y = -1; y <= 1; ++y)
         {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
+            float pcfDepth = texture(shadowMapArray, vec3(projCoords.xy + vec2(x, y) * texelSize, float(cascadeIndex))).r;
+
+            if (showDepthDebug)
+            {
+                shadow += pcfDepth < 0.999 ? 1.0 : 0.0;
+                continue;
+            }
+
             shadow += currentDepth - bias > pcfDepth ? 1.0 : 0.0;
         }
     }
 
     shadow /= 9.0;
+
+    if (showDepthDebug)
+    {
+        depthDebugColor = shadow > 0.0 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 1.0, 0.0);
+        return 0.0;
+    }
 
     return shadow;
 }
@@ -94,7 +157,34 @@ void main()
     vec3 diffuse = diff * lightColor;
 
     // Final lighting result
-    float shadow = ShadowCalculation(FragPosLightSpace, norm, lightDirection);
+    //float shadow = ShadowCalculation(FragPosLightSpace, norm, lightDirection);
+    
+    int cascadeIndex = 0;
+    float viewDepth = abs(FragPosViewSpace.z);
+    float shadow = ShadowCalculation(FragPos, viewDepth, norm, lightDirection, cascadeIndex);
+
     vec3 result = (ambient + (1.0 - shadow) * diffuse) * objectColor;
+
+    if (showDepthDebug)
+    {
+        FragColor = vec4(depthDebugColor, 1.0);
+        return;
+    }
+
+    if (showCascadeDebug)
+    {
+        vec3 colors[7] = vec3[](
+            vec3(1.0, 0.2, 0.2),
+            vec3(0.2, 1.0, 0.2),
+            vec3(0.2, 0.4, 1.0),
+            vec3(1.0, 1.0, 0.2),
+            vec3(1.0, 0.2, 1.0),
+            vec3(0.2, 1.0, 1.0),
+            vec3(1.0, 0.6, 0.2)
+        );
+
+        result = mix(result, colors[cascadeIndex], 0.35);
+    }
+
     FragColor = vec4(result, 1.0);
 }

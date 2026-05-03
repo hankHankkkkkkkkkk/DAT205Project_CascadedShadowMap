@@ -4,12 +4,14 @@ layout (location = 1) in vec3 aNormal;
 
 out vec3 FragPos;
 out vec3 Normal;
-out vec4 FragPosLightSpace;
+// out vec4 FragPosLightSpace;
+
+out vec4 FragPosViewSpace;
 
 uniform mat4 model;
 uniform mat4 view;
 uniform mat4 projection;
-uniform mat4 lightSpaceMatrix;
+// uniform mat4 lightSpaceMatrix;
 
 void main()
 {
@@ -19,7 +21,9 @@ void main()
 
     // Transform the normal into world space
     Normal = mat3(transpose(inverse(model))) * aNormal;
-    FragPosLightSpace = lightSpaceMatrix * worldPosition;
+    // FragPosLightSpace = lightSpaceMatrix * worldPosition;
+
+    FragPosViewSpace = view * worldPosition;
 
     // Standard MVP transform
     gl_Position = projection * view * worldPosition;
