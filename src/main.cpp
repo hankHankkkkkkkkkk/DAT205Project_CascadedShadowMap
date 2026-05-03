@@ -15,20 +15,132 @@
 
 #include "shader.h"
 
+// Initialize default window size 1080p
+const unsigned int WINDOW_WIDTH = 1920;
+const unsigned int WINDOW_HEIGHT = 1080;
+
+// Initial camera height
+const float CAMERA_FIXED_HEIGHT = 1.0f;
+
+
+
 // Update the viewport whenever the framebuffer size changes
 void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 {
     glViewport(0, 0, width, height);
 }
 
+// Implement movable camera
+glm::vec3 cameraPos = glm::vec3(0.0f, 3.0f, 6.0f);
+glm::vec3 cameraFront = glm::vec3(0.0f, -0.35f, -1.0f);
+glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+float yaw = -90.0f;
+float pitch = -20.0f;
+float fov = 45.0f;
+
+float lastMouseX = WINDOW_WIDTH / 2.0f;
+float lastMouseY = WINDOW_HEIGHT / 2.0f;
+bool firstMouse = true;
+
+bool mouseLookEnabled = true;
+bool spaceWasPressed = false;
+
+
 // Handle keyboard input
-void processInput(GLFWwindow* window)
+void processInput(GLFWwindow* window, float deltaTime)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
     {
         glfwSetWindowShouldClose(window, true);
     }
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && !spaceWasPressed)
+    {
+        mouseLookEnabled = !mouseLookEnabled;
+        spaceWasPressed = true;
+        firstMouse = true;
+
+        if (mouseLookEnabled)
+        {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        }
+        else
+        {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
+
+    if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE)
+    {
+        spaceWasPressed = false;
+    }
+
+	// ensure camera stays at a fixed height (y = 3.0f) and only moves horizontally
+    float cameraSpeed = 4.0f * deltaTime;
+
+    glm::vec3 horizontalFront = glm::normalize(glm::vec3(cameraFront.x, 0.0f, cameraFront.z));
+    glm::vec3 horizontalRight = glm::normalize(glm::cross(horizontalFront, cameraUp));
+
+    if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        cameraPos += cameraSpeed * horizontalFront;
+
+    if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        cameraPos -= cameraSpeed * horizontalFront;
+
+    if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        cameraPos -= cameraSpeed * horizontalRight;
+
+    if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        cameraPos += cameraSpeed * horizontalRight;
+
+    //if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+    //    cameraPos -= cameraSpeed * cameraUp;
+
+    //if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+    //    cameraPos += cameraSpeed * cameraUp;
+
+	cameraPos.y = CAMERA_FIXED_HEIGHT;
 }
+
+void mouse_callback(GLFWwindow* window, double xpos, double ypos)
+{
+    if (!mouseLookEnabled)
+    {
+        return;
+    }
+    
+    if (firstMouse)
+    {
+        lastMouseX = static_cast<float>(xpos);
+        lastMouseY = static_cast<float>(ypos);
+        firstMouse = false;
+    }
+
+    float xoffset = static_cast<float>(xpos) - lastMouseX;
+    float yoffset = lastMouseY - static_cast<float>(ypos);
+
+    lastMouseX = static_cast<float>(xpos);
+    lastMouseY = static_cast<float>(ypos);
+
+    float sensitivity = 0.1f;
+    xoffset *= sensitivity;
+    yoffset *= sensitivity;
+
+    yaw += xoffset;
+    pitch += yoffset;
+
+    if (pitch > 89.0f) pitch = 89.0f;
+    if (pitch < -89.0f) pitch = -89.0f;
+
+    glm::vec3 direction;
+    direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+    direction.y = sin(glm::radians(pitch));
+    direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+    cameraFront = glm::normalize(direction);
+}
+
+
 
 void renderScene(Shader& shader, unsigned int planeVAO, unsigned int cubeVAO);
 
@@ -52,7 +164,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     // Create the application window
-    GLFWwindow* window = glfwCreateWindow(800, 600, "DAT205 Lit 3D Scene", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(WINDOW_WIDTH, WINDOW_HEIGHT, "DAT205 Lit 3D Scene", nullptr, nullptr);
     if (!window)
     {
         std::cerr << "Failed to create GLFW window\n";
@@ -63,6 +175,9 @@ int main()
     // Make this window's OpenGL context current
     glfwMakeContextCurrent(window);
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
+
+    glfwSetCursorPosCallback(window, mouse_callback);
+    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
     // initialize ImGui context and bind it to our GLFW window and OpenGL context
     IMGUI_CHECKVERSION();
@@ -82,7 +197,7 @@ int main()
     }
 
     // Set the initial viewport
-    glViewport(0, 0, 800, 600);
+    //glViewport(0, 0, 800, 600);
 
     // Enable depth testing so closer fragments overwrite farther ones
     glEnable(GL_DEPTH_TEST);
@@ -232,8 +347,8 @@ int main()
     //    lightFarPlane
     //);
 
-    const unsigned int SHADOW_WIDTH = 1024;
-    const unsigned int SHADOW_HEIGHT = 1024;
+    const unsigned int SHADOW_WIDTH = 2048;
+    const unsigned int SHADOW_HEIGHT = 2048;
 
     unsigned int depthMapFBO;
     glGenFramebuffers(1, &depthMapFBO);
@@ -280,7 +395,7 @@ int main()
     // Main render loop
     while (!glfwWindowShouldClose(window))
     {
-        processInput(window);
+        //processInput(window);
         
         // Calculate frame time and FPS
         double currentFrameTime = glfwGetTime();
@@ -307,6 +422,8 @@ int main()
             frameCount = 0;
             fpsTimer = 0.0;
         }
+
+        processInput(window, static_cast<float>(deltaTime));
 
 		// light matrix setup for shadow mapping
         //float near_plane = 1.0f, far_plane = 15.0f;
@@ -347,11 +464,14 @@ int main()
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         // 2. render scene as normal
-        glViewport(0, 0, 800, 600);
+        //glViewport(0, 0, 800, 600);
+
+        // render the scence adaptively
+        int framebufferWidth, framebufferHeight;
+        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+        glViewport(0, 0, framebufferWidth, framebufferHeight);
 
         // Clear the screen and depth buffer every frame
-        glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -360,17 +480,36 @@ int main()
         shader.setBool("usePCF", usePCF);
 
         // Build a fixed camera view matrix
-        glm::mat4 view = glm::mat4(1.0f);
-        view = glm::translate(view, glm::vec3(0.0f, -1.2f, -6.0f));
-        view = glm::rotate(view, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+        //glm::mat4 view = glm::mat4(1.0f);
+        //view = glm::translate(view, glm::vec3(0.0f, -1.2f, -6.0f));
+        //view = glm::rotate(view, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-        // Build a perspective projection matrix
+        //// Build a perspective projection matrix
+        //glm::mat4 projection = glm::perspective(
+        //    glm::radians(45.0f),
+        //    800.0f / 600.0f,
+        //    0.1f,
+        //    100.0f
+        //);
+
+        //glm::vec3 cameraPos = glm::vec3(0.0f, 3.0f, 6.0f);
+        //glm::vec3 cameraTarget = glm::vec3(0.0f, 0.0f, 0.0f);
+        //glm::vec3 cameraUp = glm::vec3(0.0f, 1.0f, 0.0f);
+
+        glm::mat4 view = glm::lookAt(
+            cameraPos,
+            cameraPos + cameraFront,
+            cameraUp
+        );
+
+        float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
         glm::mat4 projection = glm::perspective(
-            glm::radians(45.0f),
-            800.0f / 600.0f,
+            glm::radians(fov),
+            aspect,
             0.1f,
             100.0f
         );
+
 
         // Send shared uniforms to the shader
         shader.setMat4("view", glm::value_ptr(view));
