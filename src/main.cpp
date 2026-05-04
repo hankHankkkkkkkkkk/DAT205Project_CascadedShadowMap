@@ -28,6 +28,26 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
     glViewport(0, 0, width, height);
 }
 
+ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
+{
+    // Effective settings keep the UI state but restore the original scene preset when selected.
+    ShadowSettings effectiveSettings = uiSettings;
+
+    if (uiSettings.sceneMode == SceneMode::Original)
+    {
+        // Original preset: match the small-scene values used before the CSM demo expansion.
+        effectiveSettings.cascadeCount = 3;
+        effectiveSettings.cameraNear = 0.1f;
+        effectiveSettings.cameraFar = 100.0f;
+        effectiveSettings.splitLambda = 0.5f;
+        effectiveSettings.cascadePadding = 10.0f;
+        effectiveSettings.shadowBiasSlope = 0.01f;
+        effectiveSettings.shadowBiasMin = 0.0015f;
+    }
+
+    return effectiveSettings;
+}
+
 int main()
 {
     double lastFrameTime = glfwGetTime();
@@ -87,7 +107,8 @@ int main()
     Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
 
     Mesh cube = CreateCubeMesh();
-    Mesh plane = CreatePlaneMesh();
+    Mesh smallPlane = CreateSmallPlaneMesh();
+    Mesh largePlane = CreateLargePlaneMesh();
     ShadowMap shadowMap = CreateShadowMap(SHADOW_WIDTH, SHADOW_HEIGHT, MAX_CASCADES);
 
     glm::vec3 lightDirection(-0.5f, -1.0f, -0.3f);
@@ -133,16 +154,22 @@ int main()
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
         const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
 
-        const int activeCascadeCount = shadowSettings.useCSM ? shadowSettings.cascadeCount : 1;
+        const ShadowSettings effectiveSettings = GetEffectiveShadowSettings(shadowSettings);
+
+        const int activeCascadeCount = effectiveSettings.useCSM ? effectiveSettings.cascadeCount : 1;
+        // Single-layer shadow maps use a shorter range so the non-CSM comparison remains readable.
+        const float shadowFarPlane = effectiveSettings.useCSM ? effectiveSettings.cameraFar : 45.0f;
+
         UpdateCascadeSplits(
             cascadeSplits,
             activeCascadeCount,
-            shadowSettings.cameraNear,
-            shadowSettings.cameraFar,
-            shadowSettings.splitLambda
+            effectiveSettings.cameraNear,
+            shadowFarPlane,
+            effectiveSettings.splitLambda
         );
 
-        float cascadeNear = shadowSettings.cameraNear;
+
+        float cascadeNear = effectiveSettings.cameraNear;
         for (int i = 0; i < activeCascadeCount; ++i)
         {
             const float cascadeFar = cascadeSplits[i];
@@ -156,7 +183,7 @@ int main()
                 camera.front(),
                 camera.up(),
                 lightDirection,
-                shadowSettings.cascadePadding
+                effectiveSettings.cascadePadding
             );
 
             cascadeNear = cascadeFar;
@@ -186,7 +213,7 @@ int main()
             glClear(GL_DEPTH_BUFFER_BIT);
 
             depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[i]));
-            RenderScene(depthShader, plane, cube);
+            RenderScene(depthShader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -203,19 +230,19 @@ int main()
         const glm::mat4 projection = glm::perspective(
             glm::radians(camera.zoom()),
             aspect,
-            shadowSettings.cameraNear,
-            shadowSettings.cameraFar
+            effectiveSettings.cameraNear,
+            effectiveSettings.cameraFar
         );
 
-        shader.setBool("usePCF", shadowSettings.usePCF);
+        shader.setBool("usePCF", effectiveSettings.usePCF);
         shader.setMat4("view", glm::value_ptr(view));
         shader.setMat4("projection", glm::value_ptr(projection));
         shader.setVec3("lightDirection", lightDirection.x, lightDirection.y, lightDirection.z);
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
         shader.setInt("cascadeCount", activeCascadeCount);
-        shader.setBool("showCascadeDebug", shadowSettings.showCascadeDebug);
-        shader.setBool("showDepthDebug", shadowSettings.showDepthDebug);
+        shader.setBool("showCascadeDebug", effectiveSettings.showCascadeDebug);
+        shader.setBool("showDepthDebug", effectiveSettings.showDepthDebug);
 
         for (int i = 0; i < activeCascadeCount; ++i)
         {
@@ -230,14 +257,23 @@ int main()
             );
         }
 
-        shader.setFloat("shadowBiasSlope", shadowSettings.shadowBiasSlope);
-        shader.setFloat("shadowBiasMin", shadowSettings.shadowBiasMin);
+        // Bias is scene-preset aware, with extra reduction for the single-layer comparison mode.
+        const float effectiveBiasSlope = effectiveSettings.useCSM
+            ? effectiveSettings.shadowBiasSlope
+            : effectiveSettings.shadowBiasSlope * 0.1f;
+
+        const float effectiveBiasMin = effectiveSettings.useCSM
+            ? effectiveSettings.shadowBiasMin
+            : effectiveSettings.shadowBiasMin * 0.05f;
+
+        shader.setFloat("shadowBiasSlope", effectiveBiasSlope);
+        shader.setFloat("shadowBiasMin", effectiveBiasMin);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.textureArray);
         shader.setInt("shadowMapArray", 0);
 
-        RenderScene(shader, plane, cube);
+        RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -253,7 +289,8 @@ int main()
     }
 
     cube.destroy();
-    plane.destroy();
+    smallPlane.destroy();
+    largePlane.destroy();
     shadowMap.destroy();
 
     ImGui_ImplOpenGL3_Shutdown();

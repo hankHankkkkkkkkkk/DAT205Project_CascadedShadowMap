@@ -93,6 +93,35 @@ glm::mat4 GetLightSpaceMatrix(
         maxZ = std::max(maxZ, trf.z);
     }
 
+	//// fix the problem when using the single shadow map for the whole scene, 
+ //   // which causes the shadow map to be too large and results in very low resolution shadows
+ //   const glm::vec3 sceneMin(-90.0f, -5.0f, -90.0f);
+ //   const glm::vec3 sceneMax(90.0f, 30.0f, 90.0f);
+
+ //   for (int x = 0; x < 2; ++x)
+ //   {
+ //       for (int y = 0; y < 2; ++y)
+ //       {
+ //           for (int z = 0; z < 2; ++z)
+ //           {
+ //               const glm::vec3 p(
+ //                   x == 0 ? sceneMin.x : sceneMax.x,
+ //                   y == 0 ? sceneMin.y : sceneMax.y,
+ //                   z == 0 ? sceneMin.z : sceneMax.z
+ //               );
+
+ //               const glm::vec4 trf = lightView * glm::vec4(p, 1.0f);
+ //               minX = std::min(minX, trf.x);
+ //               maxX = std::max(maxX, trf.x);
+ //               minY = std::min(minY, trf.y);
+ //               maxY = std::max(maxY, trf.y); 
+ //               minZ = std::min(minZ, trf.z);
+ //               maxZ = std::max(maxZ, trf.z);
+ //           }
+ //       }
+ //   }
+
+
     const float lightNearPlane = std::max(0.01f, -maxZ - padding);
     const float lightFarPlane = std::max(lightNearPlane + 0.01f, -minZ + padding);
 

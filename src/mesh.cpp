@@ -94,8 +94,9 @@ Mesh CreateCubeMesh()
     return CreateMesh(cubeVertices, sizeof(cubeVertices), 36);
 }
 
-Mesh CreatePlaneMesh()
+Mesh CreateSmallPlaneMesh()
 {
+    // Original scene ground plane: this preserves the small test scene scale.
     const float planeVertices[] = {
         -5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f,
          5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f,
@@ -104,6 +105,22 @@ Mesh CreatePlaneMesh()
          5.0f, 0.0f,  5.0f,   0.0f, 1.0f, 0.0f,
         -5.0f, 0.0f,  5.0f,   0.0f, 1.0f, 0.0f,
         -5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f
+    };
+
+    return CreateMesh(planeVertices, sizeof(planeVertices), 6);
+}
+
+Mesh CreateLargePlaneMesh()
+{
+    // CSM demo ground plane: the larger receiver makes long-range cascades visible.
+    const float planeVertices[] = {
+        -60.0f, 0.0f, -60.0f,   0.0f, 1.0f, 0.0f,
+         60.0f, 0.0f, -60.0f,   0.0f, 1.0f, 0.0f,
+         60.0f, 0.0f,  60.0f,   0.0f, 1.0f, 0.0f,
+
+         60.0f, 0.0f,  60.0f,   0.0f, 1.0f, 0.0f,
+        -60.0f, 0.0f,  60.0f,   0.0f, 1.0f, 0.0f,
+        -60.0f, 0.0f, -60.0f,   0.0f, 1.0f, 0.0f
     };
 
     return CreateMesh(planeVertices, sizeof(planeVertices), 6);

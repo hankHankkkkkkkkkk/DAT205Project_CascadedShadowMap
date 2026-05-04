@@ -11,6 +11,7 @@ struct Mesh
 };
 
 Mesh CreateCubeMesh();
-Mesh CreatePlaneMesh();
+Mesh CreateSmallPlaneMesh();
+Mesh CreateLargePlaneMesh();
 
 #endif

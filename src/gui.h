@@ -1,8 +1,16 @@
 #ifndef GUI_H
 #define GUI_H
 
+enum class SceneMode
+{
+    Original = 0,
+    CsmDemo = 1
+};
+
 struct ShadowSettings
 {
+    SceneMode sceneMode = SceneMode::CsmDemo;
+
     bool usePCF = true;
     bool useCSM = true;
     bool showCascadeDebug = false;
@@ -11,7 +19,7 @@ struct ShadowSettings
     int cascadeCount = 3;
 
     float cameraNear = 0.1f;
-    float cameraFar = 100.0f;
+    float cameraFar = 150.0f;
     float splitLambda = 0.5f;
     float cascadePadding = 10.0f;
 

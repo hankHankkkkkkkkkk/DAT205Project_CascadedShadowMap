@@ -16,6 +16,21 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
 
     ImGui::Checkbox("Use PCF", &settings.usePCF);
 
+    ImGui::SeparatorText("Scene");
+
+    // Scene selector: the original scene uses its historical scale and shadow preset.
+    const char* sceneModes[] = { "Original", "CSM Demo" };
+    int sceneModeIndex = static_cast<int>(settings.sceneMode);
+    if (ImGui::Combo("Scene", &sceneModeIndex, sceneModes, IM_ARRAYSIZE(sceneModes)))
+    {
+        settings.sceneMode = static_cast<SceneMode>(sceneModeIndex);
+    }
+
+    if (settings.sceneMode == SceneMode::Original)
+    {
+        ImGui::TextWrapped("Original scene uses the preserved small-scene shadow preset.");
+    }
+
     ImGui::SeparatorText("CSM");
     ImGui::Checkbox("Use CSM", &settings.useCSM);
 
