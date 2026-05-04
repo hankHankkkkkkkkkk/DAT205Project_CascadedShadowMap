@@ -2,6 +2,29 @@
 
 #include "imgui.h"
 
+namespace
+{
+void ApplySunPreset(SunSettings& sun, SunPreset preset)
+{
+    // Sun presets snap the simulated solar path to useful inspection angles.
+    switch (preset)
+    {
+    case SunPreset::Overhead:
+        sun.pathAngleDegrees = 85.0f;
+        break;
+
+    case SunPreset::FortyFiveDegrees:
+        sun.pathAngleDegrees = 45.0f;
+        break;
+
+    case SunPreset::FifteenDegrees:
+    default:
+        sun.pathAngleDegrees = 15.0f;
+        break;
+    }
+}
+}
+
 void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int activeCascadeCount)
 {
     ImGuiIO& io = ImGui::GetIO();
@@ -15,6 +38,30 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
     ImGui::SliderFloat("Bias min", &settings.shadowBiasMin, 0.0f, 0.01f, "%.5f");
 
     ImGui::Checkbox("Use PCF", &settings.usePCF);
+
+    ImGui::SeparatorText("Sun");
+
+    // Sun controls drive one shared directional light and its visible marker.
+    ImGui::Checkbox("Auto move sun", &settings.sun.autoMove);
+    ImGui::SliderFloat("Sun path angle", &settings.sun.pathAngleDegrees, 5.0f, 175.0f, "%.1f deg");
+    ImGui::SliderFloat("Sun speed", &settings.sun.pathSpeed, 0.0f, 60.0f, "%.1f deg/s");
+    ImGui::SliderFloat("Sun radius", &settings.sun.orbitRadius, 10.0f, 80.0f, "%.1f");
+
+    // Preset buttons make common light directions quick to compare.
+    if (ImGui::Button("Overhead"))
+    {
+        ApplySunPreset(settings.sun, SunPreset::Overhead);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("45 deg"))
+    {
+        ApplySunPreset(settings.sun, SunPreset::FortyFiveDegrees);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("15 deg"))
+    {
+        ApplySunPreset(settings.sun, SunPreset::FifteenDegrees);
+    }
 
     ImGui::SeparatorText("Scene");
 

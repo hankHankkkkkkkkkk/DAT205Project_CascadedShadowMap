@@ -7,9 +7,27 @@ enum class SceneMode
     CsmDemo = 1
 };
 
+enum class SunPreset
+{
+    Overhead = 0,
+    FortyFiveDegrees = 1,
+    FifteenDegrees = 2
+};
+
+struct SunSettings
+{
+    bool autoMove = false;
+    bool movingForward = true;
+
+    float pathAngleDegrees = 45.0f;
+    float pathSpeed = 12.0f;
+    float orbitRadius = 35.0f;
+};
+
 struct ShadowSettings
 {
     SceneMode sceneMode = SceneMode::CsmDemo;
+    SunSettings sun;
 
     bool usePCF = true;
     bool useCSM = true;

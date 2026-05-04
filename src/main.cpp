@@ -48,6 +48,42 @@ ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
     return effectiveSettings;
 }
 
+void UpdateSunMotion(SunSettings& sun, float deltaTime)
+{
+    // Auto motion bounces along a fixed solar arc to simulate sunrise-to-sunset movement.
+    if (!sun.autoMove)
+    {
+        return;
+    }
+
+    const float direction = sun.movingForward ? 1.0f : -1.0f;
+    sun.pathAngleDegrees += direction * sun.pathSpeed * deltaTime;
+
+    if (sun.pathAngleDegrees >= 165.0f)
+    {
+        sun.pathAngleDegrees = 165.0f;
+        sun.movingForward = false;
+    }
+    else if (sun.pathAngleDegrees <= 15.0f)
+    {
+        sun.pathAngleDegrees = 15.0f;
+        sun.movingForward = true;
+    }
+}
+
+glm::vec3 CalculateSunPosition(const SunSettings& sun)
+{
+    // Solar path: move the sun on a vertical east-west arc above the shared scene center.
+    const float pathAngle = glm::radians(sun.pathAngleDegrees);
+    const float radius = sun.orbitRadius;
+
+    return glm::vec3(
+        radius * glm::cos(pathAngle),
+        radius * glm::sin(pathAngle),
+        -radius * 0.35f
+    );
+}
+
 int main()
 {
     double lastFrameTime = glfwGetTime();
@@ -105,13 +141,13 @@ int main()
 
     Shader shader("assets/shaders/basic3d.vert", "assets/shaders/basic3d.frag");
     Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
+    Shader unlitShader("assets/shaders/unlit.vert", "assets/shaders/unlit.frag");
 
     Mesh cube = CreateCubeMesh();
     Mesh smallPlane = CreateSmallPlaneMesh();
     Mesh largePlane = CreateLargePlaneMesh();
     ShadowMap shadowMap = CreateShadowMap(SHADOW_WIDTH, SHADOW_HEIGHT, MAX_CASCADES);
 
-    glm::vec3 lightDirection(-0.5f, -1.0f, -0.3f);
     glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
 
     ShadowSettings shadowSettings;
@@ -148,6 +184,7 @@ int main()
         }
 
         camera.processInput(window, static_cast<float>(deltaTime));
+        UpdateSunMotion(shadowSettings.sun, static_cast<float>(deltaTime));
 
         int framebufferWidth = 0;
         int framebufferHeight = 0;
@@ -155,6 +192,11 @@ int main()
         const float aspect = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
 
         const ShadowSettings effectiveSettings = GetEffectiveShadowSettings(shadowSettings);
+
+        // Both scenes share one sun marker and one directional light derived from that marker.
+        const glm::vec3 sunOrbitCenter(0.0f, 0.0f, -10.0f);
+        const glm::vec3 sunPosition = sunOrbitCenter + CalculateSunPosition(effectiveSettings.sun);
+        const glm::vec3 lightDirection = glm::normalize(sunOrbitCenter - sunPosition);
 
         const int activeCascadeCount = effectiveSettings.useCSM ? effectiveSettings.cascadeCount : 1;
         // Single-layer shadow maps use a shorter range so the non-CSM comparison remains readable.
@@ -274,6 +316,21 @@ int main()
         shader.setInt("shadowMapArray", 0);
 
         RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
+
+        unlitShader.use();
+        unlitShader.setMat4("view", glm::value_ptr(view));
+        unlitShader.setMat4("projection", glm::value_ptr(projection));
+
+        // Visible sun marker: this shows the shared directional light source position.
+        glm::mat4 sunModel = glm::mat4(1.0f);
+        sunModel = glm::translate(sunModel, sunPosition);
+        sunModel = glm::scale(sunModel, glm::vec3(0.7f));
+
+        unlitShader.setMat4("model", glm::value_ptr(sunModel));
+        unlitShader.setVec3("color", 1.0f, 0.86f, 0.35f);
+
+        glBindVertexArray(cube.vao);
+        glDrawArrays(GL_TRIANGLES, 0, cube.vertexCount);
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
