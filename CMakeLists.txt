@@ -17,7 +17,7 @@ add_executable(DAT205Project_CascadedShadowMap
     extern/imgui/imgui_widgets.cpp
     extern/imgui/backends/imgui_impl_glfw.cpp
     extern/imgui/backends/imgui_impl_opengl3.cpp
-)
+ "src/camera.cpp" "src/camera.h" "src/mesh.h" "src/mesh.cpp" "src/render.h" "src/render.cpp" "src/csm.h" "src/csm.cpp" "src/shadowMap.h" "src/shadowMap.cpp" "src/gui.h" "src/gui.cpp")
 
 add_custom_command(TARGET DAT205Project_CascadedShadowMap POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory
