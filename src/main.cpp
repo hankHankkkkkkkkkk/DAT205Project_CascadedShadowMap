@@ -43,6 +43,8 @@ ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
         effectiveSettings.cascadePadding = 10.0f;
         effectiveSettings.shadowBiasSlope = 0.01f;
         effectiveSettings.shadowBiasMin = 0.0015f;
+        effectiveSettings.shadowCasterOffsetFactor = 2.0f;
+        effectiveSettings.shadowCasterOffsetUnits = 4.0f;
     }
 
     return effectiveSettings;
@@ -234,6 +236,11 @@ int main()
         glViewport(0, 0, shadowMap.width, shadowMap.height);
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.framebuffer);
         glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(
+            effectiveSettings.shadowCasterOffsetFactor,
+            effectiveSettings.shadowCasterOffsetUnits
+        );
 
         depthShader.use();
         for (int i = 0; i < activeCascadeCount; ++i)
@@ -258,6 +265,7 @@ int main()
             RenderScene(depthShader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
         }
 
+        glDisable(GL_POLYGON_OFFSET_FILL);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);

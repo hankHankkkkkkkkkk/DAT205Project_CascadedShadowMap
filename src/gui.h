@@ -43,6 +43,8 @@ struct ShadowSettings
 
     float shadowBiasSlope = 0.01f;
     float shadowBiasMin = 0.0015f;
+    float shadowCasterOffsetFactor = 0.5f;
+    float shadowCasterOffsetUnits = 2.0f;
 };
 
 void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int activeCascadeCount);

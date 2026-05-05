@@ -36,6 +36,8 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
 
     ImGui::SliderFloat("Bias slope", &settings.shadowBiasSlope, 0.0f, 0.05f, "%.5f");
     ImGui::SliderFloat("Bias min", &settings.shadowBiasMin, 0.0f, 0.01f, "%.5f");
+    ImGui::SliderFloat("Caster offset factor", &settings.shadowCasterOffsetFactor, 0.0f, 8.0f, "%.2f");
+    ImGui::SliderFloat("Caster offset units", &settings.shadowCasterOffsetUnits, 0.0f, 16.0f, "%.2f");
 
     ImGui::Checkbox("Use PCF", &settings.usePCF);
 
