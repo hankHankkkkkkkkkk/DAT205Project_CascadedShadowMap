@@ -41,10 +41,10 @@ struct ShadowSettings
     float splitLambda = 0.5f;
     float cascadePadding = 10.0f;
 
-    float shadowBiasSlope = 0.01f;
-    float shadowBiasMin = 0.0015f;
-    float shadowCasterOffsetFactor = 0.5f;
-    float shadowCasterOffsetUnits = 2.0f;
+    float shadowBiasSlope = 2.0f;
+    float shadowBiasMin = 0.5f;
+    float shadowCasterOffsetFactor = 0.1f;
+    float shadowCasterOffsetUnits = 0.25f;
 };
 
 void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int activeCascadeCount);

@@ -5,6 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>
 #include <iomanip>
 #include <iostream>
 #include <sstream>
@@ -30,21 +31,15 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height)
 
 ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
 {
-    // Effective settings keep the UI state but restore the original scene preset when selected.
+    // Effective settings keep UI-controlled debug values while applying scene-specific camera ranges.
     ShadowSettings effectiveSettings = uiSettings;
 
     if (uiSettings.sceneMode == SceneMode::Original)
     {
-        // Original preset: match the small-scene values used before the CSM demo expansion.
-        effectiveSettings.cascadeCount = 3;
+        // Original scene keeps the smaller historical camera range, but debug overlay values
+        // such as bias, CSM mode, cascade count, padding, and PCF remain interactive.
         effectiveSettings.cameraNear = 0.1f;
         effectiveSettings.cameraFar = 100.0f;
-        effectiveSettings.splitLambda = 0.5f;
-        effectiveSettings.cascadePadding = 10.0f;
-        effectiveSettings.shadowBiasSlope = 0.01f;
-        effectiveSettings.shadowBiasMin = 0.0015f;
-        effectiveSettings.shadowCasterOffsetFactor = 2.0f;
-        effectiveSettings.shadowCasterOffsetUnits = 4.0f;
     }
 
     return effectiveSettings;
@@ -157,6 +152,12 @@ int main()
 
     float cascadeSplits[MAX_CASCADES] = {};
     glm::mat4 cascadeLightSpaceMatrices[MAX_CASCADES] = {};
+    float cascadeLightDepthRanges[MAX_CASCADES] = {};
+    float cascadeWorldTexelSizes[MAX_CASCADES] = {};
+    const glm::vec3 sceneMin(-90.0f, -5.0f, -90.0f);
+    const glm::vec3 sceneMax(90.0f, 30.0f, 90.0f);
+    constexpr float cascadeOverlapRatio = 0.10f;
+    constexpr float cascadeBlendRatio = 0.08f;
 
     while (!glfwWindowShouldClose(window))
     {
@@ -217,17 +218,26 @@ int main()
         for (int i = 0; i < activeCascadeCount; ++i)
         {
             const float cascadeFar = cascadeSplits[i];
+            const float cascadeLength = cascadeFar - cascadeNear;
+            const float overlap = effectiveSettings.useCSM ? cascadeLength * cascadeOverlapRatio : 0.0f;
+            const float renderNear = std::max(effectiveSettings.cameraNear, cascadeNear - overlap);
+            const float renderFar = std::min(shadowFarPlane, cascadeFar + overlap);
 
             cascadeLightSpaceMatrices[i] = GetLightSpaceMatrix(
-                cascadeNear,
-                cascadeFar,
+                renderNear,
+                renderFar,
                 aspect,
                 camera.zoom(),
                 camera.position(),
                 camera.front(),
                 camera.up(),
                 lightDirection,
-                effectiveSettings.cascadePadding
+                effectiveSettings.cascadePadding,
+                sceneMin,
+                sceneMax,
+                shadowMap.width,
+                &cascadeLightDepthRanges[i],
+                &cascadeWorldTexelSizes[i]
             );
 
             cascadeNear = cascadeFar;
@@ -291,6 +301,7 @@ int main()
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
         shader.setInt("cascadeCount", activeCascadeCount);
+        shader.setFloat("cascadeBlendRatio", effectiveSettings.useCSM ? cascadeBlendRatio : 0.0f);
         shader.setBool("showCascadeDebug", effectiveSettings.showCascadeDebug);
         shader.setBool("showDepthDebug", effectiveSettings.showDepthDebug);
 
@@ -304,6 +315,16 @@ int main()
             shader.setFloat(
                 "cascadeSplits[" + std::to_string(i) + "]",
                 cascadeSplits[i]
+            );
+
+            shader.setFloat(
+                "cascadeLightDepthRanges[" + std::to_string(i) + "]",
+                cascadeLightDepthRanges[i]
+            );
+
+            shader.setFloat(
+                "cascadeWorldTexelSizes[" + std::to_string(i) + "]",
+                cascadeWorldTexelSizes[i]
             );
         }
 

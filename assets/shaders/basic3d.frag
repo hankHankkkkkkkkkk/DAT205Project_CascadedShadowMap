@@ -26,18 +26,18 @@ uniform bool usePCF;
 uniform sampler2DArray shadowMapArray;
 uniform mat4 lightSpaceMatrices[MAX_CASCADES];
 uniform float cascadeSplits[MAX_CASCADES];
+uniform float cascadeLightDepthRanges[MAX_CASCADES];
+uniform float cascadeWorldTexelSizes[MAX_CASCADES];
 uniform int cascadeCount;
+uniform float cascadeBlendRatio;
 uniform bool showCascadeDebug;
 uniform bool showDepthDebug;
 
 vec3 depthDebugColor = vec3(0.0);
 
-float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDir, out int cascadeIndex)
+int SelectCascade(float viewDepth)
 {
-    // perspective divide
-    // vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-
-    cascadeIndex = cascadeCount - 1;
+    int cascadeIndex = cascadeCount - 1;
     for (int i = 0; i < cascadeCount; ++i)
     {
         if (viewDepth < cascadeSplits[i])
@@ -47,9 +47,13 @@ float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDi
         }
     }
 
+    return cascadeIndex;
+}
+
+float SampleShadowCascade(vec3 fragPos, vec3 normal, vec3 lightDir, int cascadeIndex)
+{
     vec4 fragPosLightSpace = lightSpaceMatrices[cascadeIndex] * vec4(fragPos, 1.0);
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-
 
     // transform from [-1,1] to [0,1]
     projCoords = projCoords * 0.5 + 0.5;
@@ -77,22 +81,20 @@ float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDi
         return 0.0;
     }
 
-    //float closestDepth = texture(shadowMap, projCoords.xy).r;
-    //float currentDepth = projCoords.z;
-
-    // simple bias
-    //float bias = max(0.005 * (1.0 - dot(normalize(normal), normalize(-lightDir))), 0.0005);
-
-    //float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
-    //return shadow;
-
-    // Implement PCF
     float currentDepth = projCoords.z;
 
-    //float bias = max(0.01 * (1.0 - dot(normalize(normal), normalize(-lightDir))), 0.0005);
-
     float ndotl = dot(normalize(normal), normalize(-lightDir));
-    float bias = max(shadowBiasSlope * (1.0 - ndotl), shadowBiasMin);
+    float worldTexelSize = max(cascadeWorldTexelSizes[cascadeIndex], 0.000001);
+    float lightDepthRange = max(cascadeLightDepthRanges[cascadeIndex], 0.000001);
+
+    // Bias is authored in shadow texels, then converted to normalized light depth.
+    // This keeps peter-panning stable when a cascade's caster depth range grows.
+    float worldBias = max(
+        shadowBiasSlope * worldTexelSize * (1.0 - ndotl),
+        shadowBiasMin * worldTexelSize
+    );
+    worldBias = min(worldBias, 4.0 * worldTexelSize);
+    float bias = worldBias / lightDepthRange;
 
     vec2 texelSize = 1.0 / vec2(textureSize(shadowMapArray, 0).xy);
     float shadow = 0.0;
@@ -133,6 +135,32 @@ float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDi
     {
         depthDebugColor = shadow > 0.0 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 1.0, 0.0);
         return 0.0;
+    }
+
+    return shadow;
+}
+
+float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDir, out int cascadeIndex)
+{
+    cascadeIndex = SelectCascade(viewDepth);
+    float shadow = SampleShadowCascade(fragPos, normal, lightDir, cascadeIndex);
+
+    if (cascadeBlendRatio <= 0.0 || cascadeIndex >= cascadeCount - 1 || showDepthDebug)
+    {
+        return shadow;
+    }
+
+    float cascadeStart = cascadeIndex == 0 ? 0.0 : cascadeSplits[cascadeIndex - 1];
+    float cascadeEnd = cascadeSplits[cascadeIndex];
+    float blendRange = max((cascadeEnd - cascadeStart) * cascadeBlendRatio, 0.001);
+    float distanceToSplit = cascadeEnd - viewDepth;
+
+    // Blend across split edges so adjacent valid cascades do not produce a visible seam.
+    if (distanceToSplit > 0.0 && distanceToSplit < blendRange)
+    {
+        float nextShadow = SampleShadowCascade(fragPos, normal, lightDir, cascadeIndex + 1);
+        float blend = 1.0 - distanceToSplit / blendRange;
+        shadow = mix(shadow, nextShadow, blend);
     }
 
     return shadow;

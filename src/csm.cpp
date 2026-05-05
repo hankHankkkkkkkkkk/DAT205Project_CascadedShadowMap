@@ -53,7 +53,12 @@ glm::mat4 GetLightSpaceMatrix(
     const glm::vec3& cameraFront,
     const glm::vec3& cameraUp,
     const glm::vec3& lightDirection,
-    float padding
+    float padding,
+    const glm::vec3& sceneMin,
+    const glm::vec3& sceneMax,
+    unsigned int shadowMapResolution,
+    float* outLightDepthRange,
+    float* outWorldTexelSize
 )
 {
     const glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
@@ -93,43 +98,70 @@ glm::mat4 GetLightSpaceMatrix(
         maxZ = std::max(maxZ, trf.z);
     }
 
-	//// fix the problem when using the single shadow map for the whole scene, 
- //   // which causes the shadow map to be too large and results in very low resolution shadows
- //   const glm::vec3 sceneMin(-90.0f, -5.0f, -90.0f);
- //   const glm::vec3 sceneMax(90.0f, 30.0f, 90.0f);
+    float sceneMinZ = std::numeric_limits<float>::max();
+    float sceneMaxZ = std::numeric_limits<float>::lowest();
+    for (int x = 0; x < 2; ++x)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int z = 0; z < 2; ++z)
+            {
+                const glm::vec3 p(
+                    x == 0 ? sceneMin.x : sceneMax.x,
+                    y == 0 ? sceneMin.y : sceneMax.y,
+                    z == 0 ? sceneMin.z : sceneMax.z
+                );
 
- //   for (int x = 0; x < 2; ++x)
- //   {
- //       for (int y = 0; y < 2; ++y)
- //       {
- //           for (int z = 0; z < 2; ++z)
- //           {
- //               const glm::vec3 p(
- //                   x == 0 ? sceneMin.x : sceneMax.x,
- //                   y == 0 ? sceneMin.y : sceneMax.y,
- //                   z == 0 ? sceneMin.z : sceneMax.z
- //               );
+                const glm::vec4 trf = lightView * glm::vec4(p, 1.0f);
+                sceneMinZ = std::min(sceneMinZ, trf.z);
+                sceneMaxZ = std::max(sceneMaxZ, trf.z);
+            }
+        }
+    }
 
- //               const glm::vec4 trf = lightView * glm::vec4(p, 1.0f);
- //               minX = std::min(minX, trf.x);
- //               maxX = std::max(maxX, trf.x);
- //               minY = std::min(minY, trf.y);
- //               maxY = std::max(maxY, trf.y); 
- //               minZ = std::min(minZ, trf.z);
- //               maxZ = std::max(maxZ, trf.z);
- //           }
- //       }
- //   }
+    // The X/Y bounds stay fitted to the receiver slice, while Z covers scene casters
+    // that can project into that slice along the directional light.
+    const float orthoWidth = maxX - minX + padding * 2.0f;
+    const float orthoHeight = maxY - minY + padding * 2.0f;
+    const float worldTexelSize = std::max(orthoWidth, orthoHeight) / static_cast<float>(std::max(1u, shadowMapResolution));
 
+    glm::vec2 snappedCenter(
+        (minX + maxX) * 0.5f,
+        (minY + maxY) * 0.5f
+    );
 
-    const float lightNearPlane = std::max(0.01f, -maxZ - padding);
-    const float lightFarPlane = std::max(lightNearPlane + 0.01f, -minZ + padding);
+    // Snap the light projection to shadow texels to avoid shimmering while the camera moves.
+    if (worldTexelSize > 0.0f)
+    {
+        snappedCenter.x = std::floor(snappedCenter.x / worldTexelSize) * worldTexelSize;
+        snappedCenter.y = std::floor(snappedCenter.y / worldTexelSize) * worldTexelSize;
+    }
+
+    const float lightMinX = snappedCenter.x - orthoWidth * 0.5f;
+    const float lightMaxX = snappedCenter.x + orthoWidth * 0.5f;
+    const float lightMinY = snappedCenter.y - orthoHeight * 0.5f;
+    const float lightMaxY = snappedCenter.y + orthoHeight * 0.5f;
+
+    const float casterMinZ = std::min(minZ, sceneMinZ);
+    const float casterMaxZ = std::max(maxZ, sceneMaxZ);
+    const float lightNearPlane = std::max(0.01f, -casterMaxZ - padding);
+    const float lightFarPlane = std::max(lightNearPlane + 0.01f, -casterMinZ + padding);
+
+    if (outLightDepthRange != nullptr)
+    {
+        *outLightDepthRange = lightFarPlane - lightNearPlane;
+    }
+
+    if (outWorldTexelSize != nullptr)
+    {
+        *outWorldTexelSize = worldTexelSize;
+    }
 
     return glm::ortho(
-        minX - padding,
-        maxX + padding,
-        minY - padding,
-        maxY + padding,
+        lightMinX,
+        lightMaxX,
+        lightMinY,
+        lightMaxY,
         lightNearPlane,
         lightFarPlane
     ) * lightView;

@@ -34,10 +34,10 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
     ImGui::Text("FPS: %.1f", io.Framerate);
     ImGui::Text("Frame time: %.3f ms", 1000.0f / io.Framerate);
 
-    ImGui::SliderFloat("Bias slope", &settings.shadowBiasSlope, 0.0f, 0.05f, "%.5f");
-    ImGui::SliderFloat("Bias min", &settings.shadowBiasMin, 0.0f, 0.01f, "%.5f");
-    ImGui::SliderFloat("Caster offset factor", &settings.shadowCasterOffsetFactor, 0.0f, 8.0f, "%.2f");
-    ImGui::SliderFloat("Caster offset units", &settings.shadowCasterOffsetUnits, 0.0f, 16.0f, "%.2f");
+    ImGui::SliderFloat("Bias slope texels", &settings.shadowBiasSlope, 0.0f, 8.0f, "%.2f");
+    ImGui::SliderFloat("Bias min texels", &settings.shadowBiasMin, 0.0f, 4.0f, "%.2f");
+    ImGui::SliderFloat("Caster offset factor", &settings.shadowCasterOffsetFactor, 0.0f, 2.0f, "%.2f");
+    ImGui::SliderFloat("Caster offset units", &settings.shadowCasterOffsetUnits, 0.0f, 2.0f, "%.2f");
 
     ImGui::Checkbox("Use PCF", &settings.usePCF);
 
@@ -67,7 +67,7 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
 
     ImGui::SeparatorText("Scene");
 
-    // Scene selector: the original scene uses its historical scale and shadow preset.
+    // Scene selector: the original scene keeps its historical camera range.
     const char* sceneModes[] = { "Original", "CSM Demo" };
     int sceneModeIndex = static_cast<int>(settings.sceneMode);
     if (ImGui::Combo("Scene", &sceneModeIndex, sceneModes, IM_ARRAYSIZE(sceneModes)))
@@ -77,7 +77,7 @@ void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int
 
     if (settings.sceneMode == SceneMode::Original)
     {
-        ImGui::TextWrapped("Original scene uses the preserved small-scene shadow preset.");
+        ImGui::TextWrapped("Original scene uses the preserved small-scene camera range.");
     }
 
     ImGui::SeparatorText("CSM");

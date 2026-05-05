@@ -18,7 +18,12 @@ glm::mat4 GetLightSpaceMatrix(
     const glm::vec3& cameraFront,
     const glm::vec3& cameraUp,
     const glm::vec3& lightDirection,
-    float padding
+    float padding,
+    const glm::vec3& sceneMin,
+    const glm::vec3& sceneMax,
+    unsigned int shadowMapResolution,
+    float* outLightDepthRange,
+    float* outWorldTexelSize
 );
 
 #endif
