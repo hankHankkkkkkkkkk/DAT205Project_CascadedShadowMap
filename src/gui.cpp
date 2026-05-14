@@ -1,5 +1,7 @@
 #include "gui.h"
 
+#include "gpuTimer.h"
+
 #include "imgui.h"
 
 namespace
@@ -25,14 +27,25 @@ void ApplySunPreset(SunSettings& sun, SunPreset preset)
 }
 }
 
-void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int activeCascadeCount)
+void DrawShadowDebugUi(
+    ShadowSettings& settings,
+    const float* cascadeSplits,
+    int activeCascadeCount,
+    const FrameStats& frameStats)
 {
-    ImGuiIO& io = ImGui::GetIO();
-
     ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shadow Debug");
-    ImGui::Text("FPS: %.1f", io.Framerate);
-    ImGui::Text("Frame time: %.3f ms", 1000.0f / io.Framerate);
+
+    if (frameStats.hasGpuTiming)
+    {
+        ImGui::Text("GPU FPS: %.1f", frameStats.gpuFps);
+        ImGui::Text("GPU frame time: %.3f ms", frameStats.gpuFrameTimeMs);
+    }
+    else
+    {
+        ImGui::TextUnformatted("GPU FPS: warming up");
+        ImGui::TextUnformatted("GPU frame time: warming up");
+    }
 
     ImGui::SliderFloat("Bias slope texels", &settings.shadowBiasSlope, 0.0f, 8.0f, "%.2f");
     ImGui::SliderFloat("Bias min texels", &settings.shadowBiasMin, 0.0f, 4.0f, "%.2f");

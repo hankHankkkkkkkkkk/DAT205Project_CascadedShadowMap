@@ -47,6 +47,13 @@ struct ShadowSettings
     float shadowCasterOffsetUnits = 0.25f;
 };
 
-void DrawShadowDebugUi(ShadowSettings& settings, const float* cascadeSplits, int activeCascadeCount);
+struct FrameStats;
+
+void DrawShadowDebugUi(
+    ShadowSettings& settings,
+    const float* cascadeSplits,
+    int activeCascadeCount,
+    const FrameStats& frameStats
+);
 
 #endif

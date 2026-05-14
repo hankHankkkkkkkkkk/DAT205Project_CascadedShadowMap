@@ -18,6 +18,7 @@
 #include "camera.h"
 #include "config.h"
 #include "csm.h"
+#include "gpuTimer.h"
 #include "gui.h"
 #include "mesh.h"
 #include "render.h"
@@ -83,13 +84,6 @@ glm::vec3 CalculateSunPosition(const SunSettings& sun)
 
 int main()
 {
-    double lastFrameTime = glfwGetTime();
-    double fpsTimer = 0.0;
-    int frameCount = 0;
-
-    double currentFps = 0.0;
-    double currentFrameTimeMs = 0.0;
-
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW\n";
@@ -135,6 +129,8 @@ int main()
     }
 
     glEnable(GL_DEPTH_TEST);
+    GpuFrameTimer gpuFrameTimer;
+    gpuFrameTimer.initialize();
 
     Shader shader("assets/shaders/basic3d.vert", "assets/shaders/basic3d.frag");
     Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
@@ -149,6 +145,7 @@ int main()
 
     ShadowSettings shadowSettings;
     bool reportedCascadeFboError[MAX_CASCADES] = {};
+    double lastFrameTime = glfwGetTime();
 
     float cascadeSplits[MAX_CASCADES] = {};
     glm::mat4 cascadeLightSpaceMatrices[MAX_CASCADES] = {};
@@ -164,27 +161,6 @@ int main()
         const double currentFrameTime = glfwGetTime();
         const double deltaTime = currentFrameTime - lastFrameTime;
         lastFrameTime = currentFrameTime;
-
-        fpsTimer += deltaTime;
-        frameCount++;
-
-        if (fpsTimer >= 0.25)
-        {
-            currentFps = frameCount / fpsTimer;
-            currentFrameTimeMs = 1000.0 / currentFps;
-
-            std::ostringstream title;
-            title << "DAT205 Lit 3D Scene | FPS: "
-                << std::fixed << std::setprecision(1) << currentFps
-                << " | Frame: "
-                << std::fixed << std::setprecision(2) << currentFrameTimeMs
-                << " ms";
-
-            glfwSetWindowTitle(window, title.str().c_str());
-
-            frameCount = 0;
-            fpsTimer = 0.0;
-        }
 
         camera.processInput(window, static_cast<float>(deltaTime));
         UpdateSunMotion(shadowSettings.sun, static_cast<float>(deltaTime));
@@ -242,6 +218,9 @@ int main()
 
             cascadeNear = cascadeFar;
         }
+
+        // GPU frame timing starts at the first render command and intentionally excludes CPU setup and swap/vsync wait.
+        gpuFrameTimer.beginFrame();
 
         glViewport(0, 0, shadowMap.width, shadowMap.height);
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.framebuffer);
@@ -365,10 +344,25 @@ int main()
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        DrawShadowDebugUi(shadowSettings, cascadeSplits, activeCascadeCount);
+        DrawShadowDebugUi(shadowSettings, cascadeSplits, activeCascadeCount, gpuFrameTimer.stats());
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+        gpuFrameTimer.endFrame(deltaTime);
+
+        const FrameStats& frameStats = gpuFrameTimer.stats();
+        if (frameStats.hasGpuTiming)
+        {
+            std::ostringstream title;
+            title << "DAT205 Lit 3D Scene | GPU FPS: "
+                << std::fixed << std::setprecision(1) << frameStats.gpuFps
+                << " | GPU Frame: "
+                << std::fixed << std::setprecision(2) << frameStats.gpuFrameTimeMs
+                << " ms";
+
+            glfwSetWindowTitle(window, title.str().c_str());
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -378,6 +372,7 @@ int main()
     smallPlane.destroy();
     largePlane.destroy();
     shadowMap.destroy();
+    gpuFrameTimer.destroy();
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
