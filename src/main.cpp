@@ -82,6 +82,33 @@ glm::vec3 CalculateSunPosition(const SunSettings& sun)
     );
 }
 
+unsigned int GetDesiredShadowResolution(const ShadowSettings& settings)
+{
+    return settings.useCSM ? SHADOW_WIDTH : static_cast<unsigned int>(settings.singleShadowResolution);
+}
+
+int GetDesiredShadowLayers(const ShadowSettings& settings)
+{
+    return settings.useCSM ? MAX_CASCADES : 1;
+}
+
+void RecreateShadowMapIfNeeded(ShadowMap& shadowMap, const ShadowSettings& settings)
+{
+    const unsigned int desiredResolution = GetDesiredShadowResolution(settings);
+    const int desiredLayers = GetDesiredShadowLayers(settings);
+
+    if (shadowMap.width == desiredResolution
+        && shadowMap.height == desiredResolution
+        && shadowMap.layers == desiredLayers)
+    {
+        return;
+    }
+
+    // Shadow map storage changes only when the user switches mode or resolution.
+    shadowMap.destroy();
+    shadowMap = CreateShadowMap(desiredResolution, desiredResolution, desiredLayers);
+}
+
 int main()
 {
     if (!glfwInit())
@@ -164,6 +191,7 @@ int main()
 
         camera.processInput(window, static_cast<float>(deltaTime));
         UpdateSunMotion(shadowSettings.sun, static_cast<float>(deltaTime));
+        RecreateShadowMapIfNeeded(shadowMap, shadowSettings);
 
         int framebufferWidth = 0;
         int framebufferHeight = 0;
@@ -178,8 +206,7 @@ int main()
         const glm::vec3 lightDirection = glm::normalize(sunOrbitCenter - sunPosition);
 
         const int activeCascadeCount = effectiveSettings.useCSM ? effectiveSettings.cascadeCount : 1;
-        // Single-layer shadow maps use a shorter range so the non-CSM comparison remains readable.
-        const float shadowFarPlane = effectiveSettings.useCSM ? effectiveSettings.cameraFar : 45.0f;
+        const float shadowFarPlane = effectiveSettings.cameraFar;
 
         UpdateCascadeSplits(
             cascadeSplits,
@@ -212,6 +239,7 @@ int main()
                 sceneMin,
                 sceneMax,
                 shadowMap.width,
+                !effectiveSettings.useCSM,
                 &cascadeLightDepthRanges[i],
                 &cascadeWorldTexelSizes[i]
             );
@@ -344,7 +372,13 @@ int main()
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        DrawShadowDebugUi(shadowSettings, cascadeSplits, activeCascadeCount, gpuFrameTimer.stats());
+        DrawShadowDebugUi(
+            shadowSettings,
+            cascadeSplits,
+            activeCascadeCount,
+            gpuFrameTimer.stats(),
+            shadowMap.width
+        );
 
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

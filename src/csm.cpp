@@ -6,6 +6,33 @@
 #include <cmath>
 #include <limits>
 
+namespace
+{
+std::vector<glm::vec4> GetSceneBoundsCorners(const glm::vec3& sceneMin, const glm::vec3& sceneMax)
+{
+    std::vector<glm::vec4> corners;
+    corners.reserve(8);
+
+    for (int x = 0; x < 2; ++x)
+    {
+        for (int y = 0; y < 2; ++y)
+        {
+            for (int z = 0; z < 2; ++z)
+            {
+                corners.emplace_back(
+                    x == 0 ? sceneMin.x : sceneMax.x,
+                    y == 0 ? sceneMin.y : sceneMax.y,
+                    z == 0 ? sceneMin.z : sceneMax.z,
+                    1.0f
+                );
+            }
+        }
+    }
+
+    return corners;
+}
+}
+
 void UpdateCascadeSplits(float* cascadeSplits, int cascadeCount, float nearPlane, float farPlane, float lambda)
 {
     for (int i = 0; i < cascadeCount; ++i)
@@ -57,6 +84,7 @@ glm::mat4 GetLightSpaceMatrix(
     const glm::vec3& sceneMin,
     const glm::vec3& sceneMax,
     unsigned int shadowMapResolution,
+    bool fitEntireScene,
     float* outLightDepthRange,
     float* outWorldTexelSize
 )
@@ -64,7 +92,10 @@ glm::mat4 GetLightSpaceMatrix(
     const glm::mat4 projection = glm::perspective(glm::radians(fov), aspect, nearPlane, farPlane);
     const glm::mat4 view = glm::lookAt(cameraPosition, cameraPosition + cameraFront, cameraUp);
 
-    const std::vector<glm::vec4> corners = GetFrustumCornersWorldSpace(projection, view);
+    const std::vector<glm::vec4> frustumCorners = GetFrustumCornersWorldSpace(projection, view);
+    const std::vector<glm::vec4> sceneCorners = GetSceneBoundsCorners(sceneMin, sceneMax);
+    // Single shadow maps use scene bounds so the one map covers the full demo area by default.
+    const std::vector<glm::vec4>& corners = fitEntireScene ? sceneCorners : frustumCorners;
 
     glm::vec3 center(0.0f);
     for (const glm::vec4& corner : corners)
@@ -100,23 +131,11 @@ glm::mat4 GetLightSpaceMatrix(
 
     float sceneMinZ = std::numeric_limits<float>::max();
     float sceneMaxZ = std::numeric_limits<float>::lowest();
-    for (int x = 0; x < 2; ++x)
+    for (const glm::vec4& sceneCorner : sceneCorners)
     {
-        for (int y = 0; y < 2; ++y)
-        {
-            for (int z = 0; z < 2; ++z)
-            {
-                const glm::vec3 p(
-                    x == 0 ? sceneMin.x : sceneMax.x,
-                    y == 0 ? sceneMin.y : sceneMax.y,
-                    z == 0 ? sceneMin.z : sceneMax.z
-                );
-
-                const glm::vec4 trf = lightView * glm::vec4(p, 1.0f);
-                sceneMinZ = std::min(sceneMinZ, trf.z);
-                sceneMaxZ = std::max(sceneMaxZ, trf.z);
-            }
-        }
+        const glm::vec4 trf = lightView * sceneCorner;
+        sceneMinZ = std::min(sceneMinZ, trf.z);
+        sceneMaxZ = std::max(sceneMaxZ, trf.z);
     }
 
     // The X/Y bounds stay fitted to the receiver slice, while Z covers scene casters

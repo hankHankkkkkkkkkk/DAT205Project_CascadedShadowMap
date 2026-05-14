@@ -31,7 +31,8 @@ void DrawShadowDebugUi(
     ShadowSettings& settings,
     const float* cascadeSplits,
     int activeCascadeCount,
-    const FrameStats& frameStats)
+    const FrameStats& frameStats,
+    unsigned int shadowMapResolution)
 {
     ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shadow Debug");
@@ -96,6 +97,14 @@ void DrawShadowDebugUi(
     ImGui::SeparatorText("CSM");
     ImGui::Checkbox("Use CSM", &settings.useCSM);
 
+    ImGui::Text(
+        "Shadow map: %s %ux%u%s",
+        settings.useCSM ? "CSM" : "Single",
+        shadowMapResolution,
+        shadowMapResolution,
+        settings.useCSM ? " array" : ""
+    );
+
     const char* cascadeModes[] = { "3 Cascades", "5 Cascades", "7 Cascades" };
     int cascadeModeIndex = settings.cascadeCount == 3 ? 0 : settings.cascadeCount == 5 ? 1 : 2;
 
@@ -106,6 +115,20 @@ void DrawShadowDebugUi(
     }
 
     ImGui::SliderFloat("Split lambda", &settings.splitLambda, 0.0f, 1.0f);
+    ImGui::EndDisabled();
+
+    const char* singleResolutionLabels[] = { "1024", "2048", "4096", "8192" };
+    int singleResolutionIndex = settings.singleShadowResolution == 1024 ? 0
+        : settings.singleShadowResolution == 2048 ? 1
+        : settings.singleShadowResolution == 4096 ? 2
+        : 3;
+
+    ImGui::BeginDisabled(settings.useCSM);
+    if (ImGui::Combo("Single resolution", &singleResolutionIndex, singleResolutionLabels, IM_ARRAYSIZE(singleResolutionLabels)))
+    {
+        const int singleResolutions[] = { 1024, 2048, 4096, 8192 };
+        settings.singleShadowResolution = singleResolutions[singleResolutionIndex];
+    }
     ImGui::EndDisabled();
 
     ImGui::SliderFloat("Cascade padding", &settings.cascadePadding, 0.0f, 50.0f);

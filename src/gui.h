@@ -35,6 +35,7 @@ struct ShadowSettings
     bool showDepthDebug = false;
 
     int cascadeCount = 3;
+    int singleShadowResolution = 2048;
 
     float cameraNear = 0.1f;
     float cameraFar = 150.0f;
@@ -53,7 +54,8 @@ void DrawShadowDebugUi(
     ShadowSettings& settings,
     const float* cascadeSplits,
     int activeCascadeCount,
-    const FrameStats& frameStats
+    const FrameStats& frameStats,
+    unsigned int shadowMapResolution
 );
 
 #endif
