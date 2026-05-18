@@ -20,7 +20,14 @@ void RenderSceneShadowCasters(
     const Mesh& smallPlane,
     const Mesh& largePlane,
     const Mesh& cube,
-    SceneMode sceneMode
+    SceneMode sceneMode,
+    bool includeGlassPanes = true
+);
+
+void RenderGlassStochasticCasters(
+    Shader& shader,
+    const Mesh& cube,
+    float glassAlpha
 );
 
 #endif

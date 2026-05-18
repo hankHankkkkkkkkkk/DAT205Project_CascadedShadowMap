@@ -15,6 +15,13 @@ enum class SunPreset
     FifteenDegrees = 2
 };
 
+enum class ShadowTechnique
+{
+    Depth = 0,
+    ColoredStochastic = 1,
+    Deep = 2
+};
+
 struct SunSettings
 {
     bool autoMove = false;
@@ -34,6 +41,7 @@ struct ShadowSettings
     bool useCSM = true;
     bool showCascadeDebug = false;
     bool showDepthDebug = false;
+    ShadowTechnique shadowTechnique = ShadowTechnique::Depth;
 
     int cascadeCount = 3;
     int singleShadowResolution = 2048;
@@ -50,6 +58,10 @@ struct ShadowSettings
 
     // Glass scene material opacity used by the transparent receiver/caster preview.
     float glassAlpha = 0.45f;
+    // Keep stochastic coverage stable by default; animation is useful for sampling demos.
+    bool animateStochasticNoise = false;
+    // Frame-varying seed for stochastic colored shadow samples.
+    int stochasticFrameIndex = 0;
 };
 
 struct FrameStats;

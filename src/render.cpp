@@ -195,18 +195,28 @@ void RenderSceneShadowCasters(
     const Mesh& smallPlane,
     const Mesh& largePlane,
     const Mesh& cube,
-    SceneMode sceneMode)
+    SceneMode sceneMode,
+    bool includeGlassPanes)
 {
     // Glass panes are treated as ordinary depth casters in the baseline shadow pass.
     switch (sceneMode)
     {
     case SceneMode::Glass:
         RenderGlassOpaqueScene(shader, smallPlane, cube);
-        RenderGlassPanes(shader, cube, 1.0f);
+        if (includeGlassPanes)
+        {
+            RenderGlassPanes(shader, cube, 1.0f);
+        }
         break;
 
     default:
         RenderScene(shader, smallPlane, largePlane, cube, sceneMode);
         break;
     }
+}
+
+void RenderGlassStochasticCasters(Shader& shader, const Mesh& cube, float glassAlpha)
+{
+    // The stochastic pass draws only transparent panes into its colored shadow target.
+    RenderGlassPanes(shader, cube, glassAlpha);
 }

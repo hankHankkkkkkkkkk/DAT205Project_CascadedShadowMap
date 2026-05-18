@@ -23,13 +23,20 @@ uniform float shadowBiasMin;
 // Toggle for using PCF
 uniform bool usePCF;
 
+const int SHADOW_TECHNIQUE_DEPTH = 0;
+const int SHADOW_TECHNIQUE_COLORED_STOCHASTIC = 1;
+const int SHADOW_TECHNIQUE_DEEP = 2;
+
 // Implement CSM
 uniform sampler2DArray shadowMapArray;
+uniform sampler2D stochasticShadowColorMap;
+uniform sampler2D stochasticShadowDepthMap;
 uniform mat4 lightSpaceMatrices[MAX_CASCADES];
 uniform float cascadeSplits[MAX_CASCADES];
 uniform float cascadeLightDepthRanges[MAX_CASCADES];
 uniform float cascadeWorldTexelSizes[MAX_CASCADES];
 uniform int cascadeCount;
+uniform int shadowTechnique;
 uniform float cascadeBlendRatio;
 uniform bool showCascadeDebug;
 uniform bool showDepthDebug;
@@ -167,6 +174,61 @@ float ShadowCalculation(vec3 fragPos, float viewDepth, vec3 normal, vec3 lightDi
     return shadow;
 }
 
+vec3 SampleColoredStochasticTransmission(vec3 fragPos, vec3 normal, vec3 lightDir)
+{
+    vec4 fragPosLightSpace = lightSpaceMatrices[0] * vec4(fragPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0)
+    {
+        return vec3(1.0);
+    }
+
+    float ndotl = dot(normalize(normal), normalize(-lightDir));
+    float worldTexelSize = max(cascadeWorldTexelSizes[0], 0.000001);
+    float lightDepthRange = max(cascadeLightDepthRanges[0], 0.000001);
+
+    // Use the same world-space bias model so colored shadows align with depth shadows.
+    float worldBias = max(
+        shadowBiasSlope * worldTexelSize * (1.0 - ndotl),
+        shadowBiasMin * worldTexelSize
+    );
+    worldBias = min(worldBias, 4.0 * worldTexelSize);
+    float bias = worldBias / lightDepthRange;
+
+    vec2 texelSize = 1.0 / vec2(textureSize(stochasticShadowColorMap, 0));
+    vec3 accumulatedColor = vec3(0.0);
+    float hits = 0.0;
+
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            vec2 uv = projCoords.xy + vec2(x, y) * texelSize;
+            float stochasticDepth = texture(stochasticShadowDepthMap, uv).r;
+            vec4 stochasticColor = texture(stochasticShadowColorMap, uv);
+
+            if (projCoords.z - bias > stochasticDepth && stochasticColor.a > 0.5)
+            {
+                accumulatedColor += stochasticColor.rgb;
+                hits += 1.0;
+            }
+        }
+    }
+
+    if (hits <= 0.0)
+    {
+        return vec3(1.0);
+    }
+
+    float coverage = hits / 9.0;
+    vec3 averageColor = accumulatedColor / hits;
+    return mix(vec3(1.0), averageColor, coverage);
+}
+
 
 
 void main()
@@ -192,7 +254,13 @@ void main()
     float viewDepth = abs(FragPosViewSpace.z);
     float shadow = ShadowCalculation(FragPos, viewDepth, norm, lightDirection, cascadeIndex);
 
-    vec3 result = (ambient + (1.0 - shadow) * diffuse) * objectColor;
+    vec3 diffuseTransmission = vec3(1.0);
+    if (shadowTechnique == SHADOW_TECHNIQUE_COLORED_STOCHASTIC)
+    {
+        diffuseTransmission = SampleColoredStochasticTransmission(FragPos, norm, lightDirection);
+    }
+
+    vec3 result = (ambient + (1.0 - shadow) * diffuse * diffuseTransmission) * objectColor;
 
     if (showDepthDebug)
     {

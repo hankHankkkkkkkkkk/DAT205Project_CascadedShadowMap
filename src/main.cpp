@@ -43,6 +43,13 @@ ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
         effectiveSettings.cameraFar = 100.0f;
     }
 
+    if (uiSettings.sceneMode == SceneMode::Glass)
+    {
+        // Glass technique comparisons intentionally use a single 2048 shadow map.
+        effectiveSettings.useCSM = false;
+        effectiveSettings.singleShadowResolution = 2048;
+    }
+
     return effectiveSettings;
 }
 
@@ -161,6 +168,7 @@ int main()
 
     Shader shader("assets/shaders/basic3d.vert", "assets/shaders/basic3d.frag");
     Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
+    Shader stochasticShadowShader("assets/shaders/stochastic_shadow.vert", "assets/shaders/stochastic_shadow.frag");
     Shader unlitShader("assets/shaders/unlit.vert", "assets/shaders/unlit.frag");
 
     Mesh cube = CreateCubeMesh();
@@ -172,6 +180,7 @@ int main()
 
     ShadowSettings shadowSettings;
     bool reportedCascadeFboError[MAX_CASCADES] = {};
+    bool reportedStochasticFboError = false;
     double lastFrameTime = glfwGetTime();
 
     float cascadeSplits[MAX_CASCADES] = {};
@@ -250,6 +259,10 @@ int main()
         // GPU frame timing starts at the first render command and intentionally excludes CPU setup and swap/vsync wait.
         gpuFrameTimer.beginFrame();
 
+        const bool useColoredStochasticShadow =
+            effectiveSettings.sceneMode == SceneMode::Glass
+            && effectiveSettings.shadowTechnique == ShadowTechnique::ColoredStochastic;
+
         glViewport(0, 0, shadowMap.width, shadowMap.height);
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.framebuffer);
         glClear(GL_DEPTH_BUFFER_BIT);
@@ -279,11 +292,46 @@ int main()
             glClear(GL_DEPTH_BUFFER_BIT);
 
             depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[i]));
-            RenderSceneShadowCasters(depthShader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
+            RenderSceneShadowCasters(
+                depthShader,
+                smallPlane,
+                largePlane,
+                cube,
+                effectiveSettings.sceneMode,
+                !useColoredStochasticShadow
+            );
         }
 
         glDisable(GL_POLYGON_OFFSET_FILL);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        if (useColoredStochasticShadow)
+        {
+            glViewport(0, 0, shadowMap.width, shadowMap.height);
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.stochasticFramebuffer);
+
+            if (!reportedStochasticFboError && glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            {
+                std::cerr << "Stochastic shadow FBO incomplete" << std::endl;
+                reportedStochasticFboError = true;
+            }
+
+            const float clearStochasticColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+            glClearBufferfv(GL_COLOR, 0, clearStochasticColor);
+            glClear(GL_DEPTH_BUFFER_BIT);
+
+            // The stochastic pass writes randomly-covered colored glass samples plus matching depth.
+            stochasticShadowShader.use();
+            stochasticShadowShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[0]));
+            // Stable seeds avoid temporal flicker; animation can be enabled from the debug overlay.
+            const int stochasticSeed = effectiveSettings.animateStochasticNoise
+                ? shadowSettings.stochasticFrameIndex++
+                : 0;
+            stochasticShadowShader.setInt("stochasticFrameIndex", stochasticSeed);
+            RenderGlassStochasticCasters(stochasticShadowShader, cube, effectiveSettings.glassAlpha);
+
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
 
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
         glViewport(0, 0, framebufferWidth, framebufferHeight);
@@ -308,6 +356,10 @@ int main()
         shader.setVec3("lightColor", lightColor.x, lightColor.y, lightColor.z);
 
         shader.setInt("cascadeCount", activeCascadeCount);
+        const int shaderShadowTechnique = useColoredStochasticShadow
+            ? static_cast<int>(ShadowTechnique::ColoredStochastic)
+            : static_cast<int>(ShadowTechnique::Depth);
+        shader.setInt("shadowTechnique", shaderShadowTechnique);
         shader.setFloat("cascadeBlendRatio", effectiveSettings.useCSM ? cascadeBlendRatio : 0.0f);
         shader.setBool("showCascadeDebug", effectiveSettings.showCascadeDebug);
         shader.setBool("showDepthDebug", effectiveSettings.showDepthDebug);
@@ -350,6 +402,14 @@ int main()
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.textureArray);
         shader.setInt("shadowMapArray", 0);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, shadowMap.stochasticColorTexture);
+        shader.setInt("stochasticShadowColorMap", 1);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, shadowMap.stochasticDepthTexture);
+        shader.setInt("stochasticShadowDepthMap", 2);
 
         RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode, effectiveSettings.glassAlpha);
 

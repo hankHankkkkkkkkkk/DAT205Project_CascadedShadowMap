@@ -103,11 +103,37 @@ void DrawShadowDebugUi(
     else if (settings.sceneMode == SceneMode::Glass)
     {
         ImGui::TextWrapped("Glass scene uses the small-scene camera range.");
+
+        const char* shadowTechniqueLabels[] = { "Depth shadow map", "Colored stochastic shadow map", "Deep shadow map" };
+        int shadowTechniqueIndex = static_cast<int>(settings.shadowTechnique);
+        if (ImGui::Combo("Shadow technique", &shadowTechniqueIndex, shadowTechniqueLabels, IM_ARRAYSIZE(shadowTechniqueLabels)))
+        {
+            settings.shadowTechnique = static_cast<ShadowTechnique>(shadowTechniqueIndex);
+        }
+
+        if (settings.shadowTechnique == ShadowTechnique::Deep)
+        {
+            ImGui::TextWrapped("Deep shadow map is planned; current rendering falls back to depth shadows.");
+        }
+        else if (settings.shadowTechnique == ShadowTechnique::ColoredStochastic)
+        {
+            ImGui::Checkbox("Animate stochastic noise", &settings.animateStochasticNoise);
+        }
+
         ImGui::SliderFloat("Glass alpha", &settings.glassAlpha, 0.0f, 1.0f, "%.2f");
     }
 
     ImGui::SeparatorText("CSM");
+    if (settings.sceneMode == SceneMode::Glass)
+    {
+        // Glass comparisons intentionally use one fixed light-space map.
+        settings.useCSM = false;
+        settings.singleShadowResolution = 2048;
+    }
+
+    ImGui::BeginDisabled(settings.sceneMode == SceneMode::Glass);
     ImGui::Checkbox("Use CSM", &settings.useCSM);
+    ImGui::EndDisabled();
 
     ImGui::Text(
         "Shadow map: %s %ux%u%s",

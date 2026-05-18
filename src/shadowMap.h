@@ -5,6 +5,9 @@ struct ShadowMap
 {
     unsigned int framebuffer = 0;
     unsigned int textureArray = 0;
+    unsigned int stochasticFramebuffer = 0;
+    unsigned int stochasticColorTexture = 0;
+    unsigned int stochasticDepthTexture = 0;
     unsigned int width = 0;
     unsigned int height = 0;
     int layers = 0;
