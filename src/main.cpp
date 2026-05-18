@@ -35,9 +35,9 @@ ShadowSettings GetEffectiveShadowSettings(const ShadowSettings& uiSettings)
     // Effective settings keep UI-controlled debug values while applying scene-specific camera ranges.
     ShadowSettings effectiveSettings = uiSettings;
 
-    if (uiSettings.sceneMode == SceneMode::Original)
+    if (uiSettings.sceneMode == SceneMode::Original || uiSettings.sceneMode == SceneMode::Glass)
     {
-        // Original scene keeps the smaller historical camera range, but debug overlay values
+        // Compact scenes keep the smaller historical camera range, but debug overlay values
         // such as bias, CSM mode, cascade count, padding, and PCF remain interactive.
         effectiveSettings.cameraNear = 0.1f;
         effectiveSettings.cameraFar = 100.0f;
@@ -279,7 +279,7 @@ int main()
             glClear(GL_DEPTH_BUFFER_BIT);
 
             depthShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[i]));
-            RenderScene(depthShader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
+            RenderSceneShadowCasters(depthShader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
         }
 
         glDisable(GL_POLYGON_OFFSET_FILL);
@@ -351,7 +351,7 @@ int main()
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.textureArray);
         shader.setInt("shadowMapArray", 0);
 
-        RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode);
+        RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode, effectiveSettings.glassAlpha);
 
         unlitShader.use();
         unlitShader.setMat4("view", glm::value_ptr(view));

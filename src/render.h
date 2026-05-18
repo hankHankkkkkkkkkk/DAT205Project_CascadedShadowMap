@@ -11,6 +11,15 @@ void RenderScene(
     const Mesh& smallPlane,
     const Mesh& largePlane,
     const Mesh& cube,
+    SceneMode sceneMode,
+    float glassAlpha = 0.45f
+);
+
+void RenderSceneShadowCasters(
+    Shader& shader,
+    const Mesh& smallPlane,
+    const Mesh& largePlane,
+    const Mesh& cube,
     SceneMode sceneMode
 );
 

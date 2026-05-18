@@ -4,7 +4,8 @@
 enum class SceneMode
 {
     Original = 0,
-    CsmDemo = 1
+    CsmDemo = 1,
+    Glass = 2
 };
 
 enum class SunPreset
@@ -46,6 +47,9 @@ struct ShadowSettings
     float shadowBiasMin = 0.5f;
     float shadowCasterOffsetFactor = 0.1f;
     float shadowCasterOffsetUnits = 0.25f;
+
+    // Glass scene material opacity used by the transparent receiver/caster preview.
+    float glassAlpha = 0.45f;
 };
 
 struct FrameStats;

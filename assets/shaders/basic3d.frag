@@ -11,6 +11,7 @@ in vec3 FragPos;
 in vec4 FragPosViewSpace;
 
 uniform vec3 objectColor;
+uniform float objectAlpha;
 uniform vec3 lightColor;
 uniform vec3 lightDirection;
 // uniform sampler2D shadowMap;
@@ -214,5 +215,5 @@ void main()
         result = mix(result, colors[cascadeIndex], 0.35);
     }
 
-    FragColor = vec4(result, 1.0);
+    FragColor = vec4(result, objectAlpha);
 }

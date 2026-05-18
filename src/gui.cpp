@@ -82,16 +82,28 @@ void DrawShadowDebugUi(
     ImGui::SeparatorText("Scene");
 
     // Scene selector: the original scene keeps its historical camera range.
-    const char* sceneModes[] = { "Original", "CSM Demo" };
+    const char* sceneModes[] = { "Original", "CSM Demo", "Glass" };
     int sceneModeIndex = static_cast<int>(settings.sceneMode);
     if (ImGui::Combo("Scene", &sceneModeIndex, sceneModes, IM_ARRAYSIZE(sceneModes)))
     {
         settings.sceneMode = static_cast<SceneMode>(sceneModeIndex);
+
+        // Glass starts from the intended single-map comparison baseline.
+        if (settings.sceneMode == SceneMode::Glass)
+        {
+            settings.useCSM = false;
+            settings.singleShadowResolution = 2048;
+        }
     }
 
     if (settings.sceneMode == SceneMode::Original)
     {
         ImGui::TextWrapped("Original scene uses the preserved small-scene camera range.");
+    }
+    else if (settings.sceneMode == SceneMode::Glass)
+    {
+        ImGui::TextWrapped("Glass scene uses the small-scene camera range.");
+        ImGui::SliderFloat("Glass alpha", &settings.glassAlpha, 0.0f, 1.0f, "%.2f");
     }
 
     ImGui::SeparatorText("CSM");
