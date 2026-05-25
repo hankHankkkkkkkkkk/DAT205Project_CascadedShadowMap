@@ -31,12 +31,15 @@ const int SHADOW_TECHNIQUE_DEEP = 2;
 uniform sampler2DArray shadowMapArray;
 uniform sampler2D stochasticShadowColorMap;
 uniform sampler2D stochasticShadowDepthMap;
+uniform sampler2DArray deepShadowColorMap;
+uniform sampler2DArray deepShadowDepthMap;
 uniform mat4 lightSpaceMatrices[MAX_CASCADES];
 uniform float cascadeSplits[MAX_CASCADES];
 uniform float cascadeLightDepthRanges[MAX_CASCADES];
 uniform float cascadeWorldTexelSizes[MAX_CASCADES];
 uniform int cascadeCount;
 uniform int shadowTechnique;
+uniform int deepShadowLayerCount;
 uniform float cascadeBlendRatio;
 uniform bool showCascadeDebug;
 uniform bool showDepthDebug;
@@ -229,6 +232,81 @@ vec3 SampleColoredStochasticTransmission(vec3 fragPos, vec3 normal, vec3 lightDi
     return mix(vec3(1.0), averageColor, coverage);
 }
 
+vec3 SampleDeepShadowTransmissionAtUv(vec2 uv, float receiverDepth)
+{
+    vec3 transmission = vec3(1.0);
+
+    for (int layer = 0; layer < 8; ++layer)
+    {
+        if (layer >= deepShadowLayerCount)
+        {
+            break;
+        }
+
+        float layerDepth = texture(deepShadowDepthMap, vec3(uv, float(layer))).r;
+        vec4 layerColor = texture(deepShadowColorMap, vec3(uv, float(layer)));
+
+        if (layerColor.a <= 0.001 || layerDepth >= 0.99999)
+        {
+            continue;
+        }
+
+        // Deep shadow samples are ordered from the light. A receiver only sees layers in front of it.
+        if (receiverDepth > layerDepth)
+        {
+            transmission *= mix(vec3(1.0), layerColor.rgb, clamp(layerColor.a, 0.0, 1.0));
+        }
+    }
+
+    return transmission;
+}
+
+vec3 SampleDeepShadowTransmission(vec3 fragPos, vec3 normal, vec3 lightDir)
+{
+    vec4 fragPosLightSpace = lightSpaceMatrices[0] * vec4(fragPos, 1.0);
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
+
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0)
+    {
+        return vec3(1.0);
+    }
+
+    float ndotl = dot(normalize(normal), normalize(-lightDir));
+    float worldTexelSize = max(cascadeWorldTexelSizes[0], 0.000001);
+    float lightDepthRange = max(cascadeLightDepthRanges[0], 0.000001);
+
+    float worldBias = max(
+        shadowBiasSlope * worldTexelSize * (1.0 - ndotl),
+        shadowBiasMin * worldTexelSize
+    );
+    worldBias = min(worldBias, 4.0 * worldTexelSize);
+    float bias = worldBias / lightDepthRange;
+
+    float receiverDepth = projCoords.z - bias;
+
+    if (!usePCF)
+    {
+        return SampleDeepShadowTransmissionAtUv(projCoords.xy, receiverDepth);
+    }
+
+    vec2 texelSize = 1.0 / vec2(textureSize(deepShadowColorMap, 0).xy);
+    vec3 accumulatedTransmission = vec3(0.0);
+
+    for (int x = -1; x <= 1; ++x)
+    {
+        for (int y = -1; y <= 1; ++y)
+        {
+            vec2 uv = projCoords.xy + vec2(x, y) * texelSize;
+            accumulatedTransmission += SampleDeepShadowTransmissionAtUv(uv, receiverDepth);
+        }
+    }
+
+    return accumulatedTransmission / 9.0;
+}
+
 
 
 void main()
@@ -258,6 +336,10 @@ void main()
     if (shadowTechnique == SHADOW_TECHNIQUE_COLORED_STOCHASTIC)
     {
         diffuseTransmission = SampleColoredStochasticTransmission(FragPos, norm, lightDirection);
+    }
+    else if (shadowTechnique == SHADOW_TECHNIQUE_DEEP)
+    {
+        diffuseTransmission = SampleDeepShadowTransmission(FragPos, norm, lightDirection);
     }
 
     vec3 result = (ambient + (1.0 - shadow) * diffuse * diffuseTransmission) * objectColor;

@@ -113,7 +113,7 @@ void DrawShadowDebugUi(
 
         if (settings.shadowTechnique == ShadowTechnique::Deep)
         {
-            ImGui::TextWrapped("Deep shadow map is planned; current rendering falls back to depth shadows.");
+            ImGui::SliderInt("Deep layers", &settings.deepShadowLayerCount, 1, 8);
         }
         else if (settings.shadowTechnique == ShadowTechnique::ColoredStochastic)
         {

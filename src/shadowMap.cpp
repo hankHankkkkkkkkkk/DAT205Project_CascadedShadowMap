@@ -16,6 +16,12 @@ void ShadowMap::destroy()
         stochasticFramebuffer = 0;
     }
 
+    if (deepFramebuffer != 0)
+    {
+        glDeleteFramebuffers(1, &deepFramebuffer);
+        deepFramebuffer = 0;
+    }
+
     if (textureArray != 0)
     {
         glDeleteTextures(1, &textureArray);
@@ -32,6 +38,24 @@ void ShadowMap::destroy()
     {
         glDeleteTextures(1, &stochasticDepthTexture);
         stochasticDepthTexture = 0;
+    }
+
+    if (deepColorTextureArray != 0)
+    {
+        glDeleteTextures(1, &deepColorTextureArray);
+        deepColorTextureArray = 0;
+    }
+
+    if (deepDepthTextureArray != 0)
+    {
+        glDeleteTextures(1, &deepDepthTextureArray);
+        deepDepthTextureArray = 0;
+    }
+
+    if (deepScratchDepthTexture != 0)
+    {
+        glDeleteTextures(1, &deepScratchDepthTexture);
+        deepScratchDepthTexture = 0;
     }
 }
 
@@ -119,6 +143,74 @@ ShadowMap CreateShadowMap(unsigned int width, unsigned int height, int layers)
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, shadowMap.stochasticColorTexture, 0);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMap.stochasticDepthTexture, 0);
     glDrawBuffer(GL_COLOR_ATTACHMENT0);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    constexpr int deepLayers = 8;
+
+    glGenFramebuffers(1, &shadowMap.deepFramebuffer);
+
+    glGenTextures(1, &shadowMap.deepColorTextureArray);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.deepColorTextureArray);
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY,
+        0,
+        GL_RGBA16F,
+        width,
+        height,
+        deepLayers,
+        0,
+        GL_RGBA,
+        GL_FLOAT,
+        nullptr
+    );
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, stochasticColorBorder);
+
+    glGenTextures(1, &shadowMap.deepDepthTextureArray);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.deepDepthTextureArray);
+    glTexImage3D(
+        GL_TEXTURE_2D_ARRAY,
+        0,
+        GL_R32F,
+        width,
+        height,
+        deepLayers,
+        0,
+        GL_RED,
+        GL_FLOAT,
+        nullptr
+    );
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glGenTextures(1, &shadowMap.deepScratchDepthTexture);
+    glBindTexture(GL_TEXTURE_2D, shadowMap.deepScratchDepthTexture);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_DEPTH_COMPONENT32F,
+        width,
+        height,
+        0,
+        GL_DEPTH_COMPONENT,
+        GL_FLOAT,
+        nullptr
+    );
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.deepFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadowMap.deepScratchDepthTexture, 0);
     glReadBuffer(GL_NONE);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 

@@ -169,6 +169,7 @@ int main()
     Shader shader("assets/shaders/basic3d.vert", "assets/shaders/basic3d.frag");
     Shader depthShader("assets/shaders/depth.vert", "assets/shaders/depth.frag");
     Shader stochasticShadowShader("assets/shaders/stochastic_shadow.vert", "assets/shaders/stochastic_shadow.frag");
+    Shader deepShadowShader("assets/shaders/deep_shadow.vert", "assets/shaders/deep_shadow.frag");
     Shader unlitShader("assets/shaders/unlit.vert", "assets/shaders/unlit.frag");
 
     Mesh cube = CreateCubeMesh();
@@ -181,6 +182,7 @@ int main()
     ShadowSettings shadowSettings;
     bool reportedCascadeFboError[MAX_CASCADES] = {};
     bool reportedStochasticFboError = false;
+    bool reportedDeepFboError = false;
     double lastFrameTime = glfwGetTime();
 
     float cascadeSplits[MAX_CASCADES] = {};
@@ -263,6 +265,10 @@ int main()
             effectiveSettings.sceneMode == SceneMode::Glass
             && effectiveSettings.shadowTechnique == ShadowTechnique::ColoredStochastic;
 
+        const bool useDeepShadow =
+            effectiveSettings.sceneMode == SceneMode::Glass
+            && effectiveSettings.shadowTechnique == ShadowTechnique::Deep;
+
         glViewport(0, 0, shadowMap.width, shadowMap.height);
         glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.framebuffer);
         glClear(GL_DEPTH_BUFFER_BIT);
@@ -298,7 +304,7 @@ int main()
                 largePlane,
                 cube,
                 effectiveSettings.sceneMode,
-                !useColoredStochasticShadow
+                !useColoredStochasticShadow && !useDeepShadow
             );
         }
 
@@ -333,6 +339,61 @@ int main()
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
         }
 
+        if (useDeepShadow)
+        {
+            glViewport(0, 0, shadowMap.width, shadowMap.height);
+            glBindFramebuffer(GL_FRAMEBUFFER, shadowMap.deepFramebuffer);
+
+            deepShadowShader.use();
+            deepShadowShader.setMat4("lightSpaceMatrix", glm::value_ptr(cascadeLightSpaceMatrices[0]));
+            deepShadowShader.setInt("previousDeepDepthMap", 0);
+            deepShadowShader.setFloat("peelDepthEpsilon", 0.00001f);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.deepDepthTextureArray);
+
+            const GLenum deepDrawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+            glDrawBuffers(2, deepDrawBuffers);
+
+            const int deepLayerCount = std::min(std::max(effectiveSettings.deepShadowLayerCount, 1), 8);
+            for (int layer = 0; layer < deepLayerCount; ++layer)
+            {
+                glFramebufferTextureLayer(
+                    GL_FRAMEBUFFER,
+                    GL_COLOR_ATTACHMENT0,
+                    shadowMap.deepColorTextureArray,
+                    0,
+                    layer
+                );
+                glFramebufferTextureLayer(
+                    GL_FRAMEBUFFER,
+                    GL_COLOR_ATTACHMENT1,
+                    shadowMap.deepDepthTextureArray,
+                    0,
+                    layer
+                );
+
+                if (!reportedDeepFboError && glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+                {
+                    std::cerr << "Deep shadow FBO incomplete" << std::endl;
+                    reportedDeepFboError = true;
+                }
+
+                const float clearDeepColor[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+                const float clearDeepDepth[] = { 1.0f, 0.0f, 0.0f, 0.0f };
+                glClearBufferfv(GL_COLOR, 0, clearDeepColor);
+                glClearBufferfv(GL_COLOR, 1, clearDeepDepth);
+                glClear(GL_DEPTH_BUFFER_BIT);
+
+                // Each peel pass captures one additional transparent surface from the light's view.
+                deepShadowShader.setInt("peelLayer", layer);
+                RenderGlassStochasticCasters(deepShadowShader, cube, effectiveSettings.glassAlpha);
+            }
+
+            glDrawBuffer(GL_COLOR_ATTACHMENT0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        }
+
         glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
         glViewport(0, 0, framebufferWidth, framebufferHeight);
 
@@ -358,8 +419,11 @@ int main()
         shader.setInt("cascadeCount", activeCascadeCount);
         const int shaderShadowTechnique = useColoredStochasticShadow
             ? static_cast<int>(ShadowTechnique::ColoredStochastic)
+            : useDeepShadow
+            ? static_cast<int>(ShadowTechnique::Deep)
             : static_cast<int>(ShadowTechnique::Depth);
         shader.setInt("shadowTechnique", shaderShadowTechnique);
+        shader.setInt("deepShadowLayerCount", std::min(std::max(effectiveSettings.deepShadowLayerCount, 1), 8));
         shader.setFloat("cascadeBlendRatio", effectiveSettings.useCSM ? cascadeBlendRatio : 0.0f);
         shader.setBool("showCascadeDebug", effectiveSettings.showCascadeDebug);
         shader.setBool("showDepthDebug", effectiveSettings.showDepthDebug);
@@ -410,6 +474,14 @@ int main()
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, shadowMap.stochasticDepthTexture);
         shader.setInt("stochasticShadowDepthMap", 2);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.deepColorTextureArray);
+        shader.setInt("deepShadowColorMap", 3);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, shadowMap.deepDepthTextureArray);
+        shader.setInt("deepShadowDepthMap", 4);
 
         RenderScene(shader, smallPlane, largePlane, cube, effectiveSettings.sceneMode, effectiveSettings.glassAlpha);
 

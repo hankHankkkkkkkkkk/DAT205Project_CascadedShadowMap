@@ -62,6 +62,8 @@ struct ShadowSettings
     bool animateStochasticNoise = false;
     // Frame-varying seed for stochastic colored shadow samples.
     int stochasticFrameIndex = 0;
+    // Number of transparent layers captured by the deep shadow map.
+    int deepShadowLayerCount = 4;
 };
 
 struct FrameStats;
