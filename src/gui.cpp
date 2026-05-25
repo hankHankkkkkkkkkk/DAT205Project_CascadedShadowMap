@@ -28,25 +28,10 @@ void ApplySunPreset(SunSettings& sun, SunPreset preset)
 }
 
 void DrawShadowDebugUi(
-    ShadowSettings& settings,
-    const float* cascadeSplits,
-    int activeCascadeCount,
-    const FrameStats& frameStats,
-    unsigned int shadowMapResolution)
+    ShadowSettings& settings)
 {
     ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shadow Debug");
-
-    if (frameStats.hasGpuTiming)
-    {
-        ImGui::Text("GPU FPS: %.1f", frameStats.gpuFps);
-        ImGui::Text("GPU frame time: %.3f ms", frameStats.gpuFrameTimeMs);
-    }
-    else
-    {
-        ImGui::TextUnformatted("GPU FPS: warming up");
-        ImGui::TextUnformatted("GPU frame time: warming up");
-    }
 
     ImGui::SliderFloat("Bias slope texels", &settings.shadowBiasSlope, 0.0f, 8.0f, "%.2f");
     ImGui::SliderFloat("Bias min texels", &settings.shadowBiasMin, 0.0f, 4.0f, "%.2f");
@@ -135,14 +120,6 @@ void DrawShadowDebugUi(
     ImGui::Checkbox("Use CSM", &settings.useCSM);
     ImGui::EndDisabled();
 
-    ImGui::Text(
-        "Shadow map: %s %ux%u%s",
-        settings.useCSM ? "CSM" : "Single",
-        shadowMapResolution,
-        shadowMapResolution,
-        settings.useCSM ? " array" : ""
-    );
-
     const char* cascadeModes[] = { "3 Cascades", "5 Cascades", "7 Cascades" };
     int cascadeModeIndex = settings.cascadeCount == 3 ? 0 : settings.cascadeCount == 5 ? 1 : 2;
 
@@ -173,10 +150,62 @@ void DrawShadowDebugUi(
     ImGui::Checkbox("Show cascade debug", &settings.showCascadeDebug);
     ImGui::Checkbox("Show depth debug", &settings.showDepthDebug);
 
+    ImGui::End();
+}
+
+void DrawShadowInfoOverlay(
+    const ShadowSettings& settings,
+    const float* cascadeSplits,
+    int activeCascadeCount,
+    const FrameStats& frameStats,
+    unsigned int shadowMapResolution)
+{
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImVec2 padding(16.0f, 16.0f);
+    const ImVec2 position(
+        viewport->WorkPos.x + viewport->WorkSize.x - padding.x,
+        viewport->WorkPos.y + padding.y
+    );
+
+    // Keep runtime shadow diagnostics anchored away from the interactive debug controls.
+    ImGui::SetNextWindowPos(position, ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+    ImGui::SetNextWindowBgAlpha(0.72f);
+
+    const ImGuiWindowFlags windowFlags =
+        ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoSavedSettings;
+
+    // Local font sizing keeps the readout at 24px without resizing the main debug overlay.
+    ImGui::PushFont(nullptr, 24.0f);
+    ImGui::Begin("Shadow Info", nullptr, windowFlags);
+
+    if (frameStats.hasGpuTiming)
+    {
+        ImGui::Text("GPU FPS: %.1f", frameStats.gpuFps);
+        ImGui::Text("GPU frame time: %.3f ms", frameStats.gpuFrameTimeMs);
+    }
+    else
+    {
+        ImGui::TextUnformatted("GPU FPS: warming up");
+        ImGui::TextUnformatted("GPU frame time: warming up");
+    }
+
+    ImGui::Text(
+        "Shadow map: %s %ux%u%s",
+        settings.useCSM ? "CSM" : "Single",
+        shadowMapResolution,
+        shadowMapResolution,
+        settings.useCSM ? " array" : ""
+    );
+    ImGui::Text("Active cascades: %d", activeCascadeCount);
+
     for (int i = 0; i < activeCascadeCount; ++i)
     {
         ImGui::Text("Cascade %d end: %.2f", i, cascadeSplits[i]);
     }
 
     ImGui::End();
+    ImGui::PopFont();
 }

@@ -69,7 +69,11 @@ struct ShadowSettings
 struct FrameStats;
 
 void DrawShadowDebugUi(
-    ShadowSettings& settings,
+    ShadowSettings& settings
+);
+
+void DrawShadowInfoOverlay(
+    const ShadowSettings& settings,
     const float* cascadeSplits,
     int activeCascadeCount,
     const FrameStats& frameStats,

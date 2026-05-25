@@ -504,8 +504,9 @@ int main()
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        DrawShadowDebugUi(
-            shadowSettings,
+        DrawShadowDebugUi(shadowSettings);
+        DrawShadowInfoOverlay(
+            effectiveSettings,
             cascadeSplits,
             activeCascadeCount,
             gpuFrameTimer.stats(),
