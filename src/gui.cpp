@@ -25,6 +25,29 @@ void ApplySunPreset(SunSettings& sun, SunPreset preset)
         break;
     }
 }
+
+void SetSceneMode(ShadowSettings& settings, SceneMode sceneMode)
+{
+    settings.sceneMode = sceneMode;
+
+    // Glass starts from the intended single-map comparison baseline.
+    if (settings.sceneMode == SceneMode::Glass)
+    {
+        settings.useCSM = false;
+        settings.singleShadowResolution = 2048;
+    }
+}
+
+void DrawSceneButton(ShadowSettings& settings, const char* label, SceneMode sceneMode)
+{
+    const bool isSelected = settings.sceneMode == sceneMode;
+    ImGui::BeginDisabled(isSelected);
+    if (ImGui::Button(label))
+    {
+        SetSceneMode(settings, sceneMode);
+    }
+    ImGui::EndDisabled();
+}
 }
 
 void DrawShadowDebugUi(
@@ -32,6 +55,13 @@ void DrawShadowDebugUi(
 {
     ImGui::SetNextWindowSize(ImVec2(360, 240), ImGuiCond_FirstUseEver);
     ImGui::Begin("Shadow Debug");
+
+    ImGui::SeparatorText("Scene");
+    DrawSceneButton(settings, "Original", SceneMode::Original);
+    ImGui::SameLine();
+    DrawSceneButton(settings, "CSM Demo", SceneMode::CsmDemo);
+    ImGui::SameLine();
+    DrawSceneButton(settings, "Glass", SceneMode::Glass);
 
     ImGui::SliderFloat("Bias slope texels", &settings.shadowBiasSlope, 0.0f, 8.0f, "%.2f");
     ImGui::SliderFloat("Bias min texels", &settings.shadowBiasMin, 0.0f, 4.0f, "%.2f");
@@ -64,23 +94,6 @@ void DrawShadowDebugUi(
         ApplySunPreset(settings.sun, SunPreset::FifteenDegrees);
     }
 
-    ImGui::SeparatorText("Scene");
-
-    // Scene selector: the original scene keeps its historical camera range.
-    const char* sceneModes[] = { "Original", "CSM Demo", "Glass" };
-    int sceneModeIndex = static_cast<int>(settings.sceneMode);
-    if (ImGui::Combo("Scene", &sceneModeIndex, sceneModes, IM_ARRAYSIZE(sceneModes)))
-    {
-        settings.sceneMode = static_cast<SceneMode>(sceneModeIndex);
-
-        // Glass starts from the intended single-map comparison baseline.
-        if (settings.sceneMode == SceneMode::Glass)
-        {
-            settings.useCSM = false;
-            settings.singleShadowResolution = 2048;
-        }
-    }
-
     if (settings.sceneMode == SceneMode::Original)
     {
         ImGui::TextWrapped("Original scene uses the preserved small-scene camera range.");
@@ -108,47 +121,47 @@ void DrawShadowDebugUi(
         ImGui::SliderFloat("Glass alpha", &settings.glassAlpha, 0.0f, 1.0f, "%.2f");
     }
 
-    ImGui::SeparatorText("CSM");
     if (settings.sceneMode == SceneMode::Glass)
     {
         // Glass comparisons intentionally use one fixed light-space map.
         settings.useCSM = false;
         settings.singleShadowResolution = 2048;
     }
-
-    ImGui::BeginDisabled(settings.sceneMode == SceneMode::Glass);
-    ImGui::Checkbox("Use CSM", &settings.useCSM);
-    ImGui::EndDisabled();
-
-    const char* cascadeModes[] = { "3 Cascades", "5 Cascades", "7 Cascades" };
-    int cascadeModeIndex = settings.cascadeCount == 3 ? 0 : settings.cascadeCount == 5 ? 1 : 2;
-
-    ImGui::BeginDisabled(!settings.useCSM);
-    if (ImGui::Combo("Cascade count", &cascadeModeIndex, cascadeModes, IM_ARRAYSIZE(cascadeModes)))
+    else
     {
-        settings.cascadeCount = cascadeModeIndex == 0 ? 3 : cascadeModeIndex == 1 ? 5 : 7;
+        ImGui::SeparatorText("CSM");
+        ImGui::Checkbox("Use CSM", &settings.useCSM);
+
+        const char* cascadeModes[] = { "3 Cascades", "5 Cascades", "7 Cascades" };
+        int cascadeModeIndex = settings.cascadeCount == 3 ? 0 : settings.cascadeCount == 5 ? 1 : 2;
+
+        ImGui::BeginDisabled(!settings.useCSM);
+        if (ImGui::Combo("Cascade count", &cascadeModeIndex, cascadeModes, IM_ARRAYSIZE(cascadeModes)))
+        {
+            settings.cascadeCount = cascadeModeIndex == 0 ? 3 : cascadeModeIndex == 1 ? 5 : 7;
+        }
+
+        ImGui::SliderFloat("Split lambda", &settings.splitLambda, 0.0f, 1.0f);
+        ImGui::EndDisabled();
+
+        const char* singleResolutionLabels[] = { "1024", "2048", "4096", "8192" };
+        int singleResolutionIndex = settings.singleShadowResolution == 1024 ? 0
+            : settings.singleShadowResolution == 2048 ? 1
+            : settings.singleShadowResolution == 4096 ? 2
+            : 3;
+
+        ImGui::BeginDisabled(settings.useCSM);
+        if (ImGui::Combo("Single resolution", &singleResolutionIndex, singleResolutionLabels, IM_ARRAYSIZE(singleResolutionLabels)))
+        {
+            const int singleResolutions[] = { 1024, 2048, 4096, 8192 };
+            settings.singleShadowResolution = singleResolutions[singleResolutionIndex];
+        }
+        ImGui::EndDisabled();
+
+        ImGui::SliderFloat("Cascade padding", &settings.cascadePadding, 0.0f, 50.0f);
+        ImGui::Checkbox("Show cascade debug", &settings.showCascadeDebug);
+        ImGui::Checkbox("Show depth debug", &settings.showDepthDebug);
     }
-
-    ImGui::SliderFloat("Split lambda", &settings.splitLambda, 0.0f, 1.0f);
-    ImGui::EndDisabled();
-
-    const char* singleResolutionLabels[] = { "1024", "2048", "4096", "8192" };
-    int singleResolutionIndex = settings.singleShadowResolution == 1024 ? 0
-        : settings.singleShadowResolution == 2048 ? 1
-        : settings.singleShadowResolution == 4096 ? 2
-        : 3;
-
-    ImGui::BeginDisabled(settings.useCSM);
-    if (ImGui::Combo("Single resolution", &singleResolutionIndex, singleResolutionLabels, IM_ARRAYSIZE(singleResolutionLabels)))
-    {
-        const int singleResolutions[] = { 1024, 2048, 4096, 8192 };
-        settings.singleShadowResolution = singleResolutions[singleResolutionIndex];
-    }
-    ImGui::EndDisabled();
-
-    ImGui::SliderFloat("Cascade padding", &settings.cascadePadding, 0.0f, 50.0f);
-    ImGui::Checkbox("Show cascade debug", &settings.showCascadeDebug);
-    ImGui::Checkbox("Show depth debug", &settings.showDepthDebug);
 
     ImGui::End();
 }
