@@ -454,11 +454,11 @@ int main()
         // Bias is scene-preset aware, with extra reduction for the single-layer comparison mode.
         const float effectiveBiasSlope = effectiveSettings.useCSM
             ? effectiveSettings.shadowBiasSlope
-            : effectiveSettings.shadowBiasSlope * 0.1f;
+            : effectiveSettings.shadowBiasSlope * 0.75f;
 
         const float effectiveBiasMin = effectiveSettings.useCSM
             ? effectiveSettings.shadowBiasMin
-            : effectiveSettings.shadowBiasMin * 0.05f;
+            : effectiveSettings.shadowBiasMin * 0.75f;
 
         shader.setFloat("shadowBiasSlope", effectiveBiasSlope);
         shader.setFloat("shadowBiasMin", effectiveBiasMin);

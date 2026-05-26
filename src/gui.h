@@ -51,10 +51,10 @@ struct ShadowSettings
     float splitLambda = 0.5f;
     float cascadePadding = 10.0f;
 
-    float shadowBiasSlope = 2.0f;
-    float shadowBiasMin = 0.5f;
-    float shadowCasterOffsetFactor = 0.1f;
-    float shadowCasterOffsetUnits = 0.25f;
+    float shadowBiasSlope = 4.0f;
+    float shadowBiasMin = 1.25f;
+    float shadowCasterOffsetFactor = 1.0f;
+    float shadowCasterOffsetUnits = 1.0f;
 
     // Glass scene material opacity used by the transparent receiver/caster preview.
     float glassAlpha = 0.45f;
